@@ -23,24 +23,25 @@
   Temps: <b id="time">00:00.000</b><br/>
   Meilleur: <b id="best">--:--.---</b>
 </div>
-<div id="tips">Z/Q/S/D ou flèches · Espace=frein main · Gamepad ok</div>
+<div id="tips">Z/Q/S/D ou flèches · Espace=frein main · Gamepad OK</div>
 
 <div id="padL" class="pad"><div class="stick" id="stickL"></div></div>
 <div id="padR" class="pad"><div class="stick" id="stickR"></div></div>
 
-<script type="module" src="./main.js"></script>
+<!-- Module unique : on importe les libs (CDN) + nos modules locaux -->
+<script type="module">
   import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js"; // debug (désactivé par défaut)
+  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
   import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
+
   import { buildTrack } from "./track.js";
   import { startGame } from "./main.js";
 
-  // Expose libs à main.js (petit confort)
-  window.THREE = THREE;
-  window.CANNON = CANNON;
-  window.OrbitControls = OrbitControls;
+  // (optionnel) exposer pour debug dans la console
+  window.THREE = THREE; window.CANNON = CANNON; window.OrbitControls = OrbitControls;
 
+  // Lancer le jeu
   startGame({ THREE, CANNON, buildTrack });
-<script type="module" src="./main.js"></script>
+</script>
 </body>
 </html>
