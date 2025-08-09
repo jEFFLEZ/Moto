@@ -1,4 +1,4 @@
-import { buildTrack } from "./track.js";
+
 export function startGame({ THREE, CANNON, buildTrack }){
   // --- Scene ---
   const renderer = new THREE.WebGLRenderer({ antialias:true });
