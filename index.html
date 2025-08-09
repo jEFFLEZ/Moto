@@ -28,7 +28,7 @@
 <div id="padL" class="pad"><div class="stick" id="stickL"></div></div>
 <div id="padR" class="pad"><div class="stick" id="stickR"></div></div>
 
-<!-- Module unique : on importe les libs (CDN) + nos modules locaux -->
+<!-- Script unique pour charger les libs et démarrer le jeu -->
 <script type="module">
   import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
   import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
@@ -37,7 +37,12 @@
   import { buildTrack } from "./track.js";
   import { startGame } from "./main.js";
 
-  window.THREE = THREE; window.CANNON = CANNON; window.OrbitControls = OrbitControls;
+  // Exposer pour debug si besoin
+  window.THREE = THREE;
+  window.CANNON = CANNON;
+  window.OrbitControls = OrbitControls;
+
+  // Lancer le jeu
   startGame({ THREE, CANNON, buildTrack });
 </script>
 </body>
