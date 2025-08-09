@@ -37,12 +37,11 @@
   import { buildTrack } from "./track.js";
   import { startGame } from "./main.js";
 
-  // Exposer pour debug si besoin
+  // On passe les libs à main.js
   window.THREE = THREE;
   window.CANNON = CANNON;
   window.OrbitControls = OrbitControls;
 
-  // Lancer le jeu
   startGame({ THREE, CANNON, buildTrack });
 </script>
 </body>
