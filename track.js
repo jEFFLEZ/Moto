@@ -1,4 +1,4 @@
-// AUCUN import ici — on reçoit THREE via l’argument
+// NE RIEN IMPORTER ICI
 export function buildTrack(THREE){
   const pts = [];
   for(let a=0;a<Math.PI*2;a+=Math.PI/40){
@@ -9,8 +9,7 @@ export function buildTrack(THREE){
   }
   const curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.2);
 
-  // Route extrudée (ruban)
-  const ROAD_HALF = 6.0;       // demi-largeur (m)
+  const ROAD_HALF = 6.0; // m
   const segs = 800;
   const positions = new Float32Array(segs*2*3);
   const uvs = new Float32Array(segs*2*2);
@@ -33,21 +32,27 @@ export function buildTrack(THREE){
       indices.push(base,base+1,base+2, base+1,base+3,base+2);
     }
   }
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
 
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0x3a475a, roughness:0.9, metalness:0.0 });
-  const road = new THREE.Mesh(geo, roadMat); road.receiveShadow = true;
+  const road = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({ color: 0x3a475a, roughness:0.9, metalness:0.0 })
+  );
+  road.receiveShadow = true;
 
   const shoulderGeo = geo.clone();
-  const shoulder = new THREE.Mesh(shoulderGeo, new THREE.MeshStandardMaterial({ color:0x293241, roughness:1 }));
+  const shoulder = new THREE.Mesh(
+    shoulderGeo,
+    new THREE.MeshStandardMaterial({ color:0x293241, roughness:1 })
+  );
   shoulder.scale.set(1.35,1,1.35);
   shoulder.position.y = -0.01;
 
-  // Checkpoints
   const CP_EVERY = 80;
   const checkpoints = [];
   for(let i=0;i<segs;i+=CP_EVERY){
@@ -58,7 +63,6 @@ export function buildTrack(THREE){
     checkpoints.push({ p, n });
   }
 
-  // Renvoie distance latérale pour l'anti-cut/off-track
   function lateralInfo(x,z){
     const P = new THREE.Vector3(x,0,z);
     let bestD=Infinity, bestP=null, bestN=null;
