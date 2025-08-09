@@ -1,211 +1,78 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Moto 3D – Arcade</title>
-<style>
-  html,body{margin:0;height:100%;background:#0b0e14;color:#e8ecf1;font-family:system-ui}
-  #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.35);padding:8px 10px;border-radius:8px;backdrop-filter:blur(4px);line-height:1.25}
-  #hud b{color:#9be870}
-  #tips{position:fixed;right:12px;top:12px;opacity:.8}
-  .pad{position:fixed;bottom:24px;width:42vw;max-width:340px;height:42vw;max-height:340px;border:2px solid rgba(255,255,255,.25);border-radius:50%;opacity:.25}
-  #padL{left:24px} #padR{right:24px}
-  .stick{position:absolute;left:50%;top:50%;width:30%;height:30%;transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.5);border-radius:50%}
-  @media (pointer:fine){ .pad{display:none} }
-  canvas{display:block}
-</style>
+  <meta charset="UTF-8">
+  <title>Jeu Moto 3D</title>
+  <style>
+    body { margin: 0; background: #111; color: white; font-family: sans-serif; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    #tips {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 14px;
+    }
+  </style>
 </head>
 <body>
+
 <div id="hud">
-  Vitesse: <b id="spd">0</b> km/h<br/>
-  Tour: <b id="lap">0</b> / 3<br/>
-  Temps: <b id="time">00:00.000</b><br/>
+  Vitesse: <b id="spd">0</b> km/h<br>
+  Tour: <b id="lap">0</b> / 3<br>
+  Temps: <b id="time">00:00.000</b><br>
   Meilleur: <b id="best">--:--.---</b>
 </div>
-<div id="tips">Z/Q/S/D ou flèches · Espace=frein main · Gamepad OK</div>
-<div id="padL" class="pad"><div class="stick" id="stickL"></div></div>
-<div id="padR" class="pad"><div class="stick" id="stickR"></div></div>
+
+<div id="tips">Z/Q/S/D ou flèches · Espace = frein · Gamepad OK</div>
 
 <script type="module">
-  // --- Libs depuis CDN (aucun import local) ---
   import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
   import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
   import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
 
-  // ---------- track.js (inline) ----------
-  function buildTrack(THREE){
-    const pts = [];
-    for(let a=0;a<Math.PI*2;a+=Math.PI/40){
-      const r = 180 + 80*Math.sin(2*a);
-      const x = (r+20*Math.sin(a*3.1))*Math.cos(a);
-      const z = (r+20*Math.cos(a*2.7))*Math.sin(a*1.02);
-      pts.push(new THREE.Vector3(x,0,z));
-    }
-    const curve = new THREE.CatmullRomCurve3(pts, true, "catmullrom", 0.2);
-    const ROAD_HALF = 6.0, segs = 800;
-    const positions = new Float32Array(segs*2*3), uvs = new Float32Array(segs*2*2), indices=[];
-    let idx=0, uidx=0;
-    for(let i=0;i<segs;i++){
-      const t=i/(segs-1), p=curve.getPointAt(t), tan=curve.getTangentAt(t).normalize();
-      const left = new THREE.Vector3(-tan.z,0,tan.x).normalize();
-      const a = p.clone().addScaledVector(left,-ROAD_HALF), b=p.clone().addScaledVector(left,ROAD_HALF);
-      positions[idx++]=a.x; positions[idx++]=a.y; positions[idx++]=a.z;
-      positions[idx++]=b.x; positions[idx++]=b.y; positions[idx++]=b.z;
-      uvs[uidx++]=0; uvs[uidx++]=t*60; uvs[uidx++]=1; uvs[uidx++]=t*60;
-      if(i<segs-1){ const base=i*2; indices.push(base,base+1,base+2, base+1,base+3,base+2); }
-    }
-    const geo=new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions,3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
-    geo.setIndex(indices); geo.computeVertexNormals();
-    const road = new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:0.9,metalness:0}));
-    road.receiveShadow=true;
-    const shoulder = new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial({color:0x293241,roughness:1}));
-    shoulder.scale.set(1.35,1,1.35); shoulder.position.y=-0.01;
+  // Exemple simple : juste une scène, caméra et rendu
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
 
-    // checkpoints
-    const CP_EVERY=80, checkpoints=[];
-    for(let i=0;i<segs;i+=CP_EVERY){
-      const t=i/(segs-1), p=curve.getPointAt(t), tan=curve.getTangentAt(t).normalize();
-      const n = new THREE.Vector3(-tan.z,0,tan.x).normalize();
-      checkpoints.push({ p, n });
-    }
-    function lateralInfo(x,z){
-      const P=new THREE.Vector3(x,0,z); let bestD=Infinity,bestP=null,bestN=null;
-      const steps=200;
-      for(let i=0;i<=steps;i++){
-        const t=i/steps, p=curve.getPointAt(t), d=P.distanceToSquared(p);
-        if(d<bestD){ bestD=d; bestP=p; const tan=curve.getTangentAt(t).normalize();
-          bestN = new THREE.Vector3(-tan.z,0,tan.x).normalize(); }
-      }
-      const to = new THREE.Vector3().subVectors(P,bestP);
-      const lat = to.dot(bestN);
-      return { lat, p:bestP, n:bestN, dist:Math.sqrt(bestD) };
-    }
-    return { curve, road, shoulder, checkpoints, ROAD_HALF, lateralInfo };
+  const controls = new OrbitControls(camera, renderer.domElement);
+  camera.position.set(0, 5, 10);
+  controls.update();
+
+  // Lumière
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(5, 10, 5);
+  scene.add(light);
+
+  // Sol
+  const geometry = new THREE.PlaneGeometry(20, 20);
+  const material = new THREE.MeshStandardMaterial({ color: 0x007700 });
+  const plane = new THREE.Mesh(geometry, material);
+  plane.rotation.x = -Math.PI / 2;
+  scene.add(plane);
+
+  // Cube test
+  const cubeGeo = new THREE.BoxGeometry();
+  const cubeMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+  const cube = new THREE.Mesh(cubeGeo, cubeMat);
+  cube.position.y = 0.5;
+  scene.add(cube);
+
+  function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
   }
+  animate();
+</script>
 
-  // ---------- main.js (inline) ----------
-  function startGame({ THREE, CANNON, buildTrack }){
-    const renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setSize(innerWidth, innerHeight);
-    renderer.setPixelRatio(Math.min(2, devicePixelRatio||1));
-    document.body.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0b0e14);
-    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
-    camera.position.set(0,6,12);
-
-    scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,0.8));
-    const sun = new THREE.DirectionalLight(0xffffff,0.9); sun.position.set(30,60,30); scene.add(sun);
-
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(2000,2000),
-      new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1}));
-    plane.rotation.x=-Math.PI/2; plane.position.y=-0.02; plane.receiveShadow=true; scene.add(plane);
-
-    const track = buildTrack(THREE); scene.add(track.shoulder); scene.add(track.road);
-
-    // dashes
-    const line = new THREE.Group(), dashGeo=new THREE.BoxGeometry(0.2,0.02,1.6),
-      dashMat=new THREE.MeshStandardMaterial({color:0xb7c9ff}); const segs=240;
-    for(let i=0;i<segs;i++){ const t=i/segs, p=track.curve.getPointAt(t), tan=track.curve.getTangentAt(t);
-      const m=new THREE.Mesh(dashGeo,dashMat); m.position.set(p.x,0.01,p.z);
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(tan.x,0,tan.z).normalize()); line.add(m); }
-    scene.add(line);
-
-    // physics
-    const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
-    world.addBody(new CANNON.Body({mass:0,shape:new CANNON.Plane(), quaternion:new CANNON.Quaternion().setFromEuler(-Math.PI/2,0,0)}));
-
-    const chassisShape=new CANNON.Box(new CANNON.Vec3(0.6,0.3,1.0));
-    const startP=track.curve.getPointAt(0);
-    const chassisBody=new CANNON.Body({mass:180,shape:chassisShape,position:new CANNON.Vec3(startP.x,0.5,startP.z)});
-    world.addBody(chassisBody);
-
-    const vehicle=new CANNON.RaycastVehicle({chassisBody});
-    const wopt={radius:0.35,directionLocal:new CANNON.Vec3(0,-1,0),suspensionStiffness:35,suspensionRestLength:0.25,
-      frictionSlip:2.0,dampingRelaxation:2.3,dampingCompression:4.4,axleLocal:new CANNON.Vec3(1,0,0),
-      maxSuspensionForce:1e4,maxSuspensionTravel:0.35,customSlidingRotationalSpeed:-30,useCustomSlidingRotationalSpeed:true};
-    vehicle.addWheel({...wopt,chassisConnectionPointLocal:new CANNON.Vec3(0,0, 0.9),radius:0.33});
-    vehicle.addWheel({...wopt,chassisConnectionPointLocal:new CANNON.Vec3(0,0,-0.9),radius:0.36});
-    vehicle.addToWorld(world);
-
-    const moto=new THREE.Group();
-    const body=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.6,2.0), new THREE.MeshStandardMaterial({color:0xf5f6f8,metalness:0.1,roughness:0.6}));
-    body.position.y=0.35; const acc1=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.15,0.6), new THREE.MeshStandardMaterial({color:0x7cdfff}));
-    acc1.position.set(0,0.55,0.1); const acc2=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.15,0.5), new THREE.MeshStandardMaterial({color:0xff8aa0}));
-    acc2.position.set(0,0.55,-0.2); moto.add(body,acc1,acc2);
-    const wFront=new THREE.Mesh(new THREE.TorusGeometry(0.33,0.06,12,24), new THREE.MeshStandardMaterial({color:0x222}));
-    wFront.rotation.x=Math.PI/2; wFront.position.set(0,0.35,0.9);
-    const wRear=wFront.clone(); wRear.position.set(0,0.35,-0.9); wRear.scale.set(1.05,1.05,1.05);
-    moto.add(wFront,wRear); scene.add(moto);
-
-    const input={steer:0,throttle:0,brake:0,handbrake:false}, keys={};
-    addEventListener('keydown',e=>keys[e.code]=true); addEventListener('keyup',e=>keys[e.code]=false);
-
-    const padL=document.getElementById('padL'), stickL=document.getElementById('stickL');
-    const padR=document.getElementById('padR'), stickR=document.getElementById('stickR');
-    bindPad(padL,stickL,(dx,dy)=>{input.steer=Math.max(-1,Math.min(1,dx));});
-    bindPad(padR,stickR,(dx,dy)=>{input.throttle=Math.max(0,Math.min(1,-dy)); input.brake=Math.max(0,dy>0?dy:0);});
-    function bindPad(pad,stick,cb){let a=false,id=null,cx=0,cy=0,r=0;
-      const pos=t=>{const rect=pad.getBoundingClientRect();return{x:t.clientX-rect.left,y:t.clientY-rect.top}};
-      const start=t=>{if(a)return;a=true;id=t.pointerId;pad.setPointerCapture(id);const rect=pad.getBoundingClientRect();cx=rect.width/2;cy=rect.height/2;r=rect.width/2;move(t)};
-      const move=t=>{if(!a||t.pointerId!==id)return;const p=pos(t);let dx=p.x-cx,dy=p.y-cy;const m=Math.hypot(dx,dy);if(m>r){dx*=r/m;dy*=r/m}
-        stick.style.left=(50+dx/r*50)+'%'; stick.style.top=(50+dy/r*50)+'%'; cb(dx/r,dy/r)};
-      const end=t=>{if(!a||t.pointerId!==id)return;a=false;try{pad.releasePointerCapture(id)}catch{};stick.style.left='50%';stick.style.top='50%';cb(0,0)};
-      pad.addEventListener('pointerdown',start); pad.addEventListener('pointermove',move);
-      pad.addEventListener('pointerup',end); pad.addEventListener('pointercancel',end);
-    }
-
-    const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'),
-      timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
-    let laps=0, best=null, lapStart=performance.now(), nextCP=0;
-
-    const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-    const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000);
-      return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
-
-    let last=performance.now();
-    (function tick(now){
-      requestAnimationFrame(tick);
-      const dt=Math.min(1/60,(now-last)/1000); last=now;
-
-      const up=!!(keys['ArrowUp']||keys['KeyW']),
-            dn=!!(keys['ArrowDown']||keys['KeyS']),
-            lf=!!(keys['ArrowLeft']||keys['KeyA']),
-            rt=!!(keys['ArrowRight']||keys['KeyD']),
-            hb=!!keys['Space'];
-      input.throttle=Math.max(input.throttle, up?1:0);
-      input.brake=Math.max(input.brake, dn?1:0);
-      input.steer += ((lf?-1:0)+(rt?1:0)-input.steer)*0.2;
-      input.handbrake=hb;
-
-      const MAX_ENGINE=1800, MAX_STEER=0.45, BRAKE_FORCE=45, HBRAKE_FORCE=80;
-
-      const pos=chassisBody.position;
-      const {lat}=track.lateralInfo(pos.x,pos.z);
-      const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.15;
-      const gripMul=onTrack?1:0.55;
-
-      vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*gripMul,0);
-      vehicle.setSteeringValue(0,1);
-      vehicle.applyEngineForce(-(input.throttle*MAX_ENGINE)*(onTrack?1:0.55),1);
-      vehicle.applyEngineForce(0,0);
-      const brake=(input.brake?BRAKE_FORCE:0)+(input.handbrake?HBRAKE_FORCE:0);
-      vehicle.setBrake(brake,0); vehicle.setBrake(brake,1);
-
-      world.step(1/60,dt);
-
-      moto.position.copy(chassisBody.position);
-      moto.quaternion.copy(chassisBody.quaternion);
-
-      const fwd=new THREE.Vector3(0,0,1).applyQuaternion(moto.quaternion);
-      const camTarget = moto.position.clone().add(fwd.clone().multiplyScalar(4)).add(new THREE.Vector3(0,1.5,0));
-      const camPos    = moto.position.clone().add(fwd.clone().multiplyScalar(-10)).add(new THREE.Vector3(0,4,0));
-      camera.position.lerp(camPos,0.12); camera.lookAt(camTarget);
-
-      const cp=track.checkpoints[nextCP];
-      if(cp){
-        const v=new THREE.Vector3(pos.x-cp.p.x,0,pos.z-cp.p.z);
-        const pass=v.length(
+</body>
+</html>
