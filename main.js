@@ -1,6 +1,6 @@
-// AUCUN import ici — tout vient de index.html
+// NE RIEN IMPORTER ICI
 export function startGame({ THREE, CANNON, buildTrack }) {
-  // --- Renderer / Scene / Camera ---
+  // Renderer / Scene / Camera
   const renderer = new THREE.WebGLRenderer({ antialias:true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
@@ -28,12 +28,12 @@ export function startGame({ THREE, CANNON, buildTrack }) {
   plane.receiveShadow = true;
   scene.add(plane);
 
-  // --- Track ---
+  // Piste
   const track = buildTrack(THREE);
   scene.add(track.shoulder);
   scene.add(track.road);
 
-  // Ligne centrale (dashes)
+  // Ligne centrale
   {
     const line = new THREE.Group();
     const dashGeo = new THREE.BoxGeometry(0.2, 0.02, 1.6);
@@ -54,17 +54,16 @@ export function startGame({ THREE, CANNON, buildTrack }) {
     scene.add(line);
   }
 
-  // --- Physics (CANNON) ---
+  // Physique
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
   world.broadphase = new CANNON.NaiveBroadphase();
   world.solver.iterations = 12;
 
-  // Ground collider
   const groundBody = new CANNON.Body({ mass:0, shape:new CANNON.Plane() });
   groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);
   world.addBody(groundBody);
 
-  // --- Bike (raycast vehicle 2 roues) ---
+  // Moto (raycast vehicle)
   const chassisShape = new CANNON.Box(new CANNON.Vec3(0.6,0.3,1.0));
   const startP = track.curve.getPointAt(0);
   const chassisBody = new CANNON.Body({
@@ -92,7 +91,7 @@ export function startGame({ THREE, CANNON, buildTrack }) {
   vehicle.addWheel({ ...wopt, chassisConnectionPointLocal: new CANNON.Vec3(0,0,-0.9), radius:0.36 }); // arrière
   vehicle.addToWorld(world);
 
-  // Roues visuelles + moto simple
+  // Visuel moto
   const moto = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.6,2.0),
                               new THREE.MeshStandardMaterial({ color:0xf5f6f8, metalness:0.1, roughness:0.6 }));
@@ -117,13 +116,13 @@ export function startGame({ THREE, CANNON, buildTrack }) {
     wheelBodies.push(wb); world.addBody(wb);
   });
 
-  // --- Inputs ---
+  // Inputs
   const input = { steer:0, throttle:0, brake:0, handbrake:false };
   const keys = {};
   addEventListener('keydown', e=>{ keys[e.code]=true; });
   addEventListener('keyup',   e=>{ keys[e.code]=false; });
 
-  // Touch pads
+  // Pads tactiles
   const padL = document.getElementById('padL'), stickL = document.getElementById('stickL');
   const padR = document.getElementById('padR'), stickR = document.getElementById('stickR');
   bindPad(padL, stickL, (dx,dy)=>{ input.steer = clamp(dx,-1,1); });
@@ -141,25 +140,24 @@ export function startGame({ THREE, CANNON, buildTrack }) {
     pad.addEventListener('pointerup',end); pad.addEventListener('pointercancel',end);
   }
 
-  // --- HUD ---
+  // HUD
   const spdEl = document.getElementById('spd'),
         lapEl = document.getElementById('lap'),
         timeEl= document.getElementById('time'),
         bestEl= document.getElementById('best');
   let laps=0, best=null, lapStart=performance.now(), nextCP=0;
 
-  // --- Helpers ---
+  // Helpers
   function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
   const fmt = ms => { const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000);
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`; };
 
-  // --- Loop ---
+  // Loop
   let last = performance.now();
   function tick(now){
     requestAnimationFrame(tick);
     const dt = Math.min(1/60, (now-last)/1000); last=now;
 
-    // Keyboard (simple)
     const up=!!(keys['ArrowUp']||keys['KeyW']);
     const dn=!!(keys['ArrowDown']||keys['KeyS']);
     const lf=!!(keys['ArrowLeft']||keys['KeyA']);
@@ -170,19 +168,16 @@ export function startGame({ THREE, CANNON, buildTrack }) {
     input.steer   += ((lf?-1:0)+(rt?1:0) - input.steer)*0.2;
     input.handbrake = hb;
 
-    // Arcade params
     const MAX_ENGINE = 1800;
     const MAX_STEER  = 0.45;
     const BRAKE_FORCE = 45;
     const HBRAKE_FORCE= 80;
 
-    // Off-track slowdown
     const pos = chassisBody.position;
     const { lat } = track.lateralInfo(pos.x, pos.z);
     const onTrack = Math.abs(lat) <= track.ROAD_HALF*1.15;
     const gripMul = onTrack?1:0.55;
 
-    // Commandes véhicule (0=avant,1=arrière)
     vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*gripMul, 0);
     vehicle.setSteeringValue(0, 1);
     vehicle.applyEngineForce(-(input.throttle*MAX_ENGINE)*(onTrack?1:0.55), 1);
@@ -193,9 +188,9 @@ export function startGame({ THREE, CANNON, buildTrack }) {
 
     world.step(1/60, dt);
 
-    // Sync visuel
     moto.position.copy(chassisBody.position);
     moto.quaternion.copy(chassisBody.quaternion);
+
     vehicle.wheelInfos.forEach((wheel,i)=>{
       vehicle.updateWheelTransform(i);
       const t=wheel.worldTransform;
@@ -204,14 +199,12 @@ export function startGame({ THREE, CANNON, buildTrack }) {
       mesh.quaternion.set(t.quaternion.x,t.quaternion.y,t.quaternion.z,t.quaternion.w);
     });
 
-    // Caméra chase
     const fwd = new THREE.Vector3(0,0,1).applyQuaternion(moto.quaternion);
     const camTarget = moto.position.clone().add(fwd.clone().multiplyScalar(4)).add(new THREE.Vector3(0,1.5,0));
     const camPos    = moto.position.clone().add(fwd.clone().multiplyScalar(-10)).add(new THREE.Vector3(0,4,0));
     camera.position.lerp(camPos, 0.12);
     camera.lookAt(camTarget);
 
-    // Checkpoints / tours
     const cp = track.checkpoints[nextCP];
     if(cp){
       const v = new THREE.Vector3(pos.x-cp.p.x, 0, pos.z-cp.p.z);
@@ -227,7 +220,6 @@ export function startGame({ THREE, CANNON, buildTrack }) {
       }
     }
 
-    // HUD
     spdEl.textContent  = Math.round(chassisBody.velocity.length()*3.6);
     lapEl.textContent  = Math.min(laps,3);
     timeEl.textContent = fmt(now - lapStart);
