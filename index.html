@@ -37,19 +37,13 @@
     <div id="tips">Z/Q/S/D ou flèches · Espace=frein main · Gamepad OK</div>
 
     <script type="module">
-        import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-        import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
-        import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
-
-        import { buildTrack } from "./track.js";
-        import { startGame } from "./main.js";
-
-        // Passage des libs à main.js
-        window.THREE = THREE;
-        window.CANNON = CANNON;
-        window.OrbitControls = OrbitControls;
-
-        startGame({ THREE, CANNON, buildTrack });
-    </script>
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+  import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
+  import { buildTrack } from "./track.js?v=3";
+  import { startGame } from "./main.js?v=3";
+  window.THREE = THREE; window.CANNON = CANNON; window.OrbitControls = OrbitControls;
+  startGame({ THREE, CANNON, buildTrack });
+</script>
 </body>
 </html>
