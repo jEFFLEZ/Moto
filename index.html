@@ -1,42 +1,54 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Moto 3D – Arcade</title>
-  <style>
-    html,body{margin:0;height:100%;background:#0b0e14;color:#e8ecf1;font-family:system-ui}
-    #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.35);padding:8px 10px;border-radius:8px;backdrop-filter:blur(4px);line-height:1.25}
-    #hud b{color:#9be870}
-    #tips{position:fixed;right:12px;top:12px;opacity:.8}
-    .pad{position:fixed;bottom:24px;width:42vw;max-width:340px;height:42vw;max-height:340px;border:2px solid rgba(255,255,255,.25);border-radius:50%;opacity:.25}
-    #padL{left:24px} #padR{right:24px}
-    .stick{position:absolute;left:50%;top:50%;width:30%;height:30%;transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.5);border-radius:50%}
-    @media (pointer:fine){ .pad{display:none} }
-    canvas{display:block}
-  </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jeu Moto 3D</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #111;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #hud {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #tips {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 14px;
+        }
+    </style>
 </head>
 <body>
-<div id="hud">
-  Vitesse: <b id="spd">0</b> km/h<br/>
-  Tour: <b id="lap">0</b> / 3<br/>
-  Temps: <b id="time">00:00.000</b><br/>
-  Meilleur: <b id="best">--:--.---</b>
-</div>
-<div id="tips">Z/Q/S/D ou flèches · Espace=frein main · Gamepad OK</div>
+    <div id="hud">
+        Vitesse: <b id="spd">0</b> km/h<br/>
+        Tour: <b id="lap">0</b> / 3<br/>
+        Temps: <b id="time">00:00.000</b><br/>
+        Meilleur: <b id="best">--:--.---</b>
+    </div>
+    <div id="tips">Z/Q/S/D ou flèches · Espace=frein main · Gamepad OK</div>
 
-<div id="padL" class="pad"><div class="stick" id="stickL"></div></div>
-<div id="padR" class="pad"><div class="stick" id="stickR"></div></div>
+    <script type="module">
+        import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+        import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+        import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
+        import { buildTrack } from "./track.js";
+        import { startGame } from "./main.js";
 
-<!-- Script unique pour charger les libs et démarrer le jeu -->
- <script type="module">
-  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
-  import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
-  import { buildTrack } from "./track.js?v=2";
-  import { startGame } from "./main.js?v=2";
-  window.THREE = THREE; window.CANNON = CANNON; window.OrbitControls = OrbitControls;
-  startGame({ THREE, CANNON, buildTrack });
-</script>
+        // Passage des libs à main.js si besoin
+        window.THREE = THREE;
+        window.CANNON = CANNON;
+        window.OrbitControls = OrbitControls;
+
+        startGame({ THREE, CANNON, buildTrack });
+    </script>
 </body>
 </html>
