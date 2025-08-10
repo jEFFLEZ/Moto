@@ -180,6 +180,10 @@ const wopt = {
     vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK/2,0,-WB/2), radius:R_REAR});
 
     vehicle.addToWorld(world);
+    // après vehicle.addToWorld(world);
+setTimeout(()=>{
+  console.log('contact AV gauche ?', vehicle.wheelInfos[0].isInContact);
+}, 500);
 
     chassis.angularFactor.set(0,1,0);
     chassis.angularDamping=0.3;
