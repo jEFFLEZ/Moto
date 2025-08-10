@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Moto 3D – Low-poly + Bots (R=reset)</title>
+<title>Moto 3D – Low-poly + Bots (R=reset, H=flip)</title>
 <link rel="icon" href="data:,">
 <style>
   html,body{margin:0;height:100%;background:#0b0e14;color:#e8ecf1;font-family:system-ui}
@@ -12,6 +12,12 @@
   #tips{position:fixed;right:12px;top:12px;opacity:.85}
   #pause{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;padding:14px 18px;background:rgba(0,0,0,.55);border-radius:12px;display:none}
   canvas{display:block}
+
+  /* Pads tactiles */
+  .pad{position:fixed;bottom:24px;width:42vw;max-width:340px;height:42vw;max-height:340px;border:2px solid rgba(255,255,255,.28);border-radius:50%;opacity:.28}
+  #padL{left:24px} #padR{right:24px}
+  .stick{position:absolute;left:50%;top:50%;width:30%;height:30%;transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.55);border-radius:50%}
+  @media (pointer:fine){ .pad{display:none} }
 </style>
 </head>
 <body>
@@ -21,8 +27,12 @@
   Temps: <b id="time">00:00.000</b><br/>
   Meilleur: <b id="best">--:--.---</b>
 </div>
-<div id="tips">Z/Q/S/D ou flèches · Espace=frein · N=Nitro · P=Pause · R=Reset</div>
+<div id="tips">Z/Q/S/D ou flèches · Espace=frein · N=Nitro · P=Pause · R=Reset · H=Flip moteur</div>
 <div id="pause">PAUSE</div>
+
+<!-- Pads mobiles -->
+<div id="padL" class="pad"><div id="stickL" class="stick"></div></div>
+<div id="padR" class="pad"><div id="stickR" class="stick"></div></div>
 
 <script type="importmap">
 {
@@ -52,52 +62,40 @@ const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,4000);
 camera.position.set(0,6,12);
 
 scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.85));
-const sun=new THREE.DirectionalLight(0xffffff,.9);
-sun.position.set(40,60,30);
-scene.add(sun);
+const sun=new THREE.DirectionalLight(0xffffff,.9); sun.position.set(40,60,30); scene.add(sun);
 
-const floor=new THREE.Mesh(
-  new THREE.PlaneGeometry(6000,6000),
-  new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1})
-);
-floor.rotation.x=-Math.PI/2; floor.position.y=-3; floor.receiveShadow=true;
-scene.add(floor);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(6000,6000),
+  new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1}));
+floor.rotation.x=-Math.PI/2; floor.position.y=-3; floor.receiveShadow=true; scene.add(floor);
 
 /* ---------- piste relief + sauts ---------- */
 function buildTrack(){
-  const pts=[]; const segs=700;
-  const RX=220, RZ=140;
+  const pts=[]; const segs=700; const RX=220, RZ=140;
   for(let i=0;i<segs;i++){
     const t=i/segs*2*Math.PI;
-    const x=Math.cos(t)*RX;
-    const z=Math.sin(t)*RZ;
-    const h = 8*Math.sin(t*2.0) + 3*Math.sin(t*5.0+1.2);
+    const x=Math.cos(t)*RX, z=Math.sin(t)*RZ;
+    const h=8*Math.sin(t*2.0)+3*Math.sin(t*5.0+1.2);
     const bump=(a,c,w)=>Math.max(0,1-Math.abs(((a-c+Math.PI*2)%(Math.PI*2))-Math.PI)/w);
-    const j1 = 5 * bump(t, Math.PI*0.25, 0.12);
-    const j2 = 6 * bump(t, Math.PI*1.30, 0.10);
-    pts.push(new THREE.Vector3(x, (h+j1+j2)*0.4, z));
+    const j1=5*bump(t,Math.PI*0.25,0.12), j2=6*bump(t,Math.PI*1.30,0.10);
+    pts.push(new THREE.Vector3(x,(h+j1+j2)*0.4,z));
   }
   const curve=new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5);
-
   const ROAD_HALF=6.8, n=900;
-  const positions=[], uvs=[], indices=[];
+  const positions=[],uvs=[],indices=[];
   for(let i=0;i<n;i++){
-    const t=i/(n-1), p=curve.getPointAt(t);
-    const tan=curve.getTangentAt(t).normalize();
+    const t=i/(n-1), p=curve.getPointAt(t), tan=curve.getTangentAt(t).normalize();
     const left=new THREE.Vector3(-tan.z,0,tan.x).normalize();
-    const a=p.clone().addScaledVector(left,-ROAD_HALF);
-    const b=p.clone().addScaledVector(left, ROAD_HALF);
-    positions.push(a.x,a.y,a.z, b.x,b.y,b.z);
-    uvs.push(0,t*45, 1,t*45);
-    if(i<n-1){ const base=i*2; indices.push(base,base+1,base+2, base+1,base+3,base+2); }
+    const a=p.clone().addScaledVector(left,-ROAD_HALF), b=p.clone().addScaledVector(left, ROAD_HALF);
+    positions.push(a.x,a.y,a.z,b.x,b.y,b.z); uvs.push(0,t*45,1,t*45);
+    if(i<n-1){const base=i*2; indices.push(base,base+1,base+2, base+1,base+3,base+2);}
   }
   const geo=new THREE.BufferGeometry();
   geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
   geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
   geo.setIndex(indices); geo.computeVertexNormals();
 
-  const road=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95}));
-  const shoulder=new THREE.Mesh(geo.clone(),new THREE.MeshStandardMaterial({color:0x202734,roughness:1}));
+  const road = new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95}));
+  const shoulder = new THREE.Mesh(geo.clone(),new THREE.MeshStandardMaterial({color:0x202734,roughness:1}));
   shoulder.scale.set(1.35,1,1.35); shoulder.position.y=-0.02;
 
   const line=new THREE.Group(), dashGeo=new THREE.BoxGeometry(.28,.03,1.6), dashMat=new THREE.MeshStandardMaterial({color:0xbfd2ff});
@@ -114,63 +112,47 @@ function buildTrack(){
     let bestD=Infinity,bp=null,bn=null;
     const steps=260;
     for(let i=0;i<=steps;i++){
-      const t=i/steps, p=curve.getPointAt(t);
-      const d=P.distanceToSquared(p);
-      if(d<bestD){ bestD=d; bp=p;
-        const tan=curve.getTangentAt(t).normalize();
-        bn=new THREE.Vector3(-tan.z,0,tan.x).normalize();
-      }
+      const t=i/steps, p=curve.getPointAt(t); const d=P.distanceToSquared(p);
+      if(d<bestD){ bestD=d; bp=p; const tan=curve.getTangentAt(t).normalize();
+        bn=new THREE.Vector3(-tan.z,0,tan.x).normalize(); }
     }
-    const to=new THREE.Vector3().subVectors(P,bp);
-    const lat=to.dot(bn);
+    const to=new THREE.Vector3().subVectors(P,bp); const lat=to.dot(bn);
     return {lat,p:bp,n:bn};
   }
 
   return {curve,ROAD_HALF,road,shoulder,line,lateralInfo};
 }
-const track=buildTrack();
-scene.add(track.shoulder,track.road,track.line);
+const track=buildTrack(); scene.add(track.shoulder,track.road,track.line);
 
 /* ---------- physique ---------- */
 const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
-world.allowSleep=false;
-world.solver.iterations=12;
+world.allowSleep=false; world.solver.iterations=12;
 
 // colliders de route (yaw + pitch)
 const SEG_BODIES=180, THICK=0.25;
 for(let i=0;i<SEG_BODIES;i++){
-  const t0=i/SEG_BODIES, t1=(i+1)/SEG_BODIES;
-  const p0=track.curve.getPointAt(t0), p1=track.curve.getPointAt(t1);
-  const dx=p1.x-p0.x, dy=p1.y-p0.y, dz=p1.z-p0.z;
-  const len=Math.max(0.0001,Math.hypot(dx,dz));
-  const half=new CANNON.Vec3(track.ROAD_HALF, THICK/2, len/2);
+  const t0=i/SEG_BODIES,t1=(i+1)/SEG_BODIES;
+  const p0=track.curve.getPointAt(t0),p1=track.curve.getPointAt(t1);
+  const dx=p1.x-p0.x,dy=p1.y-p0.y,dz=p1.z-p0.z, len=Math.max(0.0001,Math.hypot(dx,dz));
+  const half=new CANNON.Vec3(track.ROAD_HALF,THICK/2,len/2);
   const b=new CANNON.Body({mass:0,shape:new CANNON.Box(half)});
   b.position.set((p0.x+p1.x)/2,(p0.y+p1.y)/2,(p0.z+p1.z)/2);
-  const yaw=Math.atan2(dx,dz);
-  const pitch=Math.atan2(dy, Math.hypot(dx,dz));
-  b.quaternion.setFromEuler(pitch, yaw, 0, "XYZ");
-  world.addBody(b);
+  const yaw=Math.atan2(dx,dz), pitch=Math.atan2(dy,Math.hypot(dx,dz));
+  b.quaternion.setFromEuler(pitch,yaw,0,"XYZ"); world.addBody(b);
 }
 
 /* ---------- véhicule ---------- */
 function makeVehicle(startP){
   const chassisShape=new CANNON.Box(new CANNON.Vec3(.6,.32,1.05));
-  const chassis=new CANNON.Body({
-    mass:170,
-    shape:chassisShape,
-    position:new CANNON.Vec3(startP.x,startP.y+1.1,startP.z)
-  });
-  chassis.allowSleep=false;
-  world.addBody(chassis);
-
+  const chassis=new CANNON.Body({mass:170,shape:chassisShape,position:new CANNON.Vec3(startP.x,startP.y+1.1,startP.z)});
+  chassis.allowSleep=false; world.addBody(chassis);
   const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
-  const wopt={radius:.36, directionLocal:new CANNON.Vec3(0,-1,0),
-    suspensionRestLength:.28, suspensionStiffness:42, dampingRelaxation:2.4, dampingCompression:4.6,
-    frictionSlip:2.25, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.36,
-    customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
-  };
-  vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .95), radius:.34});
-  vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.95), radius:.37});
+  const wopt={radius:.36,directionLocal:new CANNON.Vec3(0,-1,0),
+    suspensionRestLength:.28,suspensionStiffness:42,dampingRelaxation:2.4,dampingCompression:4.6,
+    frictionSlip:2.25,axleLocal:new CANNON.Vec3(1,0,0),maxSuspensionForce:1e4,maxSuspensionTravel:.36,
+    customSlidingRotationalSpeed:-30,useCustomSlidingRotationalSpeed:true};
+  vehicle.addWheel({...wopt,chassisConnectionPointLocal:new CANNON.Vec3(0,0, .95),radius:.34});
+  vehicle.addWheel({...wopt,chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.95),radius:.37});
   vehicle.addToWorld(world);
   return {chassis,vehicle};
 }
@@ -178,23 +160,20 @@ function makeVehicle(startP){
 /* ---------- moto low-poly ---------- */
 function makeMotoMesh(mainHex=0x4caf50){
   const root=new THREE.Group();
-  const main=new THREE.MeshStandardMaterial({color:mainHex, metalness:.05, roughness:.6});
-  const dark=new THREE.MeshStandardMaterial({color:0x222, metalness:.1, roughness:.8});
-  const light=new THREE.MeshStandardMaterial({color:0xf5f6f8, metalness:.05, roughness:.5});
-  const frame=new THREE.Mesh(new THREE.BoxGeometry(1.3,.38,2.1), light); frame.position.y=.4;
-  const seat =new THREE.Mesh(new THREE.BoxGeometry(1.0,.18,1.0), main); seat.position.set(0,.62,-.1);
-  const hood =new THREE.Mesh(new THREE.BoxGeometry(.8,.22,.7),  main); hood.position.set(0,.58,.6);
-  const wheelG=new THREE.TorusGeometry(.36,.08,10,20); const wheelM=dark;
-  const wF=new THREE.Mesh(wheelG,wheelM); wF.rotation.x=Math.PI/2; wF.position.set(0,.38,.95);
+  const main=new THREE.MeshStandardMaterial({color:mainHex,metalness:.05,roughness:.6});
+  const dark=new THREE.MeshStandardMaterial({color:0x222,metalness:.1,roughness:.8});
+  const light=new THREE.MeshStandardMaterial({color:0xf5f6f8,metalness:.05,roughness:.5});
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(1.3,.38,2.1),light); frame.position.y=.4;
+  const seat =new THREE.Mesh(new THREE.BoxGeometry(1.0,.18,1.0),main); seat.position.set(0,.62,-.1);
+  const hood =new THREE.Mesh(new THREE.BoxGeometry(.8,.22,.7), main); hood.position.set(0,.58,.6);
+  const wG=new THREE.TorusGeometry(.36,.08,10,20), wM=dark;
+  const wF=new THREE.Mesh(wG,wM); wF.rotation.x=Math.PI/2; wF.position.set(0,.38,.95);
   const wR=wF.clone(); wR.position.z=-.95; wR.scale.set(1.03,1.03,1.03);
-  const bar=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.65,8), light);
-  bar.rotation.z=Math.PI/2; bar.position.set(0,.92,.45);
-  const plate=new THREE.Mesh(new THREE.BoxGeometry(.52,.42,.08), light); plate.position.set(0,.85,.85);
-  const fender=new THREE.Mesh(new THREE.BoxGeometry(.9,.08,.5), main); fender.position.set(0,.52,.95);
-  const tail=new THREE.Mesh(new THREE.BoxGeometry(.9,.06,.5),  main); tail.position.set(0,.52,-.95);
-  root.add(frame,seat,hood,wF,wR,bar,plate,fender,tail);
-  root.position.y=0.2;
-  return root;
+  const bar=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.65,8),light); bar.rotation.z=Math.PI/2; bar.position.set(0,.92,.45);
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(.52,.42,.08),light); plate.position.set(0,.85,.85);
+  const fend=new THREE.Mesh(new THREE.BoxGeometry(.9,.08,.5),main); fend.position.set(0,.52,.95);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(.9,.06,.5),main); tail.position.set(0,.52,-.95);
+  root.add(frame,seat,hood,wF,wR,bar,plate,fend,tail); root.position.y=0.2; return root;
 }
 
 /* ---------- joueur + bots ---------- */
@@ -215,56 +194,52 @@ for(let i=0;i<3;i++){
   bots.push({ ...b, vis:m, t });
 }
 
-/* ---------- input + reset ---------- */
+/* ---------- input (clavier + pads) + reset ---------- */
 const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
 const keys = {};
-const setKey = (e, isDown) => {
-  const k = e.code || e.key;
-  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
-  keys[k] = isDown;
-};
-window.addEventListener('keydown', e=>{
+const setKey=(e,isDown)=>{ const k=e.code||e.key; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); keys[k]=isDown; };
+addEventListener('keydown',e=>{
   setKey(e,true);
-  if (e.code==='KeyP' || e.key==='p') {
-    input.paused=!input.paused;
-    document.getElementById('pause').style.display=input.paused?'block':'none';
-  }
-  if (e.code==='KeyR' || e.key==='r') resetOnTrack(player.chassis);
+  if(e.code==='KeyP'||e.key==='p'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
+  if(e.code==='KeyR'||e.key==='r'){ resetOnTrack(player.chassis); }
+  if(e.code==='KeyH'||e.key==='h'){ ENGINE_SIGN*=-1; }
 });
-window.addEventListener('keyup',   e=>setKey(e,false));
+addEventListener('keyup',e=>setKey(e,false));
 renderer.domElement.addEventListener('click',()=>renderer.domElement.focus());
 
-function resetOnTrack(body) {
-  const p = body.position;
-  let bestD = Infinity, bestT = 0;
-  const STEPS = 300;
-  for (let i = 0; i <= STEPS; i++) {
-    const t = i / STEPS;
-    const c = track.curve.getPointAt(t);
-    const d = (c.x - p.x) ** 2 + (c.z - p.z) ** 2;
-    if (d < bestD) { bestD = d; bestT = t; }
-  }
-  const c = track.curve.getPointAt(bestT);
-  const tan = track.curve.getTangentAt(bestT);
-  const yaw = Math.atan2(tan.x, tan.z);
-  body.position.set(c.x, c.y + 1.0, c.z);
-  body.velocity.set(0, 0, 0);
-  body.angularVelocity.set(0, 0, 0);
-  body.quaternion.setFromEuler(0, yaw, 0, 'XYZ');
+function bindPad(pad,stick,cb){
+  let act=false,id=null,cx=0,cy=0,r=0;
+  const pos=t=>{const rect=pad.getBoundingClientRect();return{x:t.clientX-rect.left,y:t.clientY-rect.top, w:rect.width, h:rect.height}};
+  const start=t=>{ if(act) return; act=true; id=t.pointerId; pad.setPointerCapture(id);
+    const rect=pad.getBoundingClientRect(); cx=rect.width/2; cy=rect.height/2; r=rect.width/2; move(t); };
+  const move=t=>{ if(!act||t.pointerId!==id) return; const p=pos(t); let dx=p.x-cx, dy=p.y-cy; const m=Math.hypot(dx,dy);
+    if(m>r){ dx*=r/m; dy*=r/m; } stick.style.left=(50+dx/r*50)+'%'; stick.style.top=(50+dy/r*50)+'%'; cb(dx/r,dy/r); };
+  const end =t=>{ if(!act||t.pointerId!==id) return; act=false; try{pad.releasePointerCapture(id)}catch{}; stick.style.left='50%'; stick.style.top='50%'; cb(0,0); };
+  pad.addEventListener('pointerdown',start); pad.addEventListener('pointermove',move);
+  pad.addEventListener('pointerup',end); pad.addEventListener('pointercancel',end);
+}
+bindPad(document.getElementById('padL'), document.getElementById('stickL'), (dx,dy)=>{ input.steer = clamp(dx,-1,1); });
+bindPad(document.getElementById('padR'), document.getElementById('stickR'), (dx,dy)=>{ input.throttle = clamp(-dy,0,1); input.brake = clamp(dy>0?dy:0,0,1); });
+
+function resetOnTrack(body){
+  const p=body.position; let bestD=Infinity,bestT=0; const STEPS=300;
+  for(let i=0;i<=STEPS;i++){ const t=i/STEPS, c=track.curve.getPointAt(t); const d=(c.x-p.x)**2+(c.z-p.z)**2; if(d<bestD){bestD=d; bestT=t;} }
+  const c=track.curve.getPointAt(bestT), tan=track.curve.getTangentAt(bestT), yaw=Math.atan2(tan.x,tan.z);
+  body.position.set(c.x, c.y+1.0, c.z); body.velocity.set(0,0,0); body.angularVelocity.set(0,0,0); body.quaternion.setFromEuler(0,yaw,0,'XYZ');
 }
 
 /* ---------- HUD + caméra ---------- */
-const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'), timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
+const spdEl=document.getElementById('spd'), timeEl=document.getElementById('time');
 function chase(mesh){
-  const fwd=new THREE.Vector3(0,0,1).applyQuaternion(mesh.quaternion);
-  const upv=new THREE.Vector3(0,1,0);
+  const fwd=new THREE.Vector3(0,0,1).applyQuaternion(mesh.quaternion), upv=new THREE.Vector3(0,1,0);
   const look=mesh.position.clone().add(fwd.clone().multiplyScalar(4)).add(upv.clone().multiplyScalar(1.6));
   const cam =mesh.position.clone().add(fwd.clone().multiplyScalar(-10)).add(upv.clone().multiplyScalar(3.8));
   camera.position.lerp(cam,.12); camera.lookAt(look);
 }
 
 /* ---------- boucle ---------- */
-let last=performance.now();
+let last=performance.now(), lapStart=last;
+let ENGINE_SIGN=1, accelHold=0;   // auto-flip du moteur si ça n'avance pas
 function tick(now){
   requestAnimationFrame(tick);
   const dt=Math.min(1/60,(now-last)/1000); last=now;
@@ -275,13 +250,12 @@ function tick(now){
   const dn = !!(keys['ArrowDown'] || keys['KeyS']);
   const lf = !!(keys['ArrowLeft'] || keys['KeyA'] || keys['KeyQ']);
   const rt = !!(keys['ArrowRight'] || keys['KeyD']);
-  input.throttle = up ? 1 : 0;
-  input.brake    = dn ? 1 : 0;
+  if(up) input.throttle = 1; if(!up && input.throttle<0.001) input.throttle = 0;
+  input.brake    = dn ? 1 : input.brake*0.9;
   input.steer   += (((lf?-1:0)+(rt?1:0)) - input.steer) * 0.25;
   input.hand     = !!keys['Space'];
   input.nitro    = !!(keys['KeyN'] || keys['KeyM']);
 
-  // paramètres arcade
   const MAX_ENGINE = input.nitro ? 2800 : 2000;
   const MAX_STEER  = 0.52;
   const BRAKE      = 52, H_BRAKE = 90;
@@ -292,10 +266,17 @@ function tick(now){
     const {lat}=track.lateralInfo(pos.x,pos.y,pos.z);
     const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
     const grip=onTrack?1:0.6;
+
+    // auto-flip si on accélère mais que la vitesse reste très faible
+    const speed = player.chassis.velocity.length();
+    if (input.throttle>0.2){
+      accelHold += dt;
+      if (accelHold>0.6 && speed<0.5){ ENGINE_SIGN *= -1; accelHold = 0; }
+    } else accelHold = 0;
+
     player.vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip,0);
     player.vehicle.setSteeringValue(0,1);
-    // NOTE: signe positif ici (hébergement → axe inversé)
-    player.vehicle.applyEngineForce((input.throttle*MAX_ENGINE)*(onTrack?1:0.6), 1);
+    player.vehicle.applyEngineForce(ENGINE_SIGN*(input.throttle*MAX_ENGINE)*(onTrack?1:0.6), 1);
     player.vehicle.applyEngineForce(0,0);
     const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
     player.vehicle.setBrake(brake,0); player.vehicle.setBrake(brake,1);
@@ -311,34 +292,24 @@ function tick(now){
     const angDiff=Math.atan2(Math.sin(desiredYaw-yawNow),Math.cos(desiredYaw-yawNow));
     const steer=clamp(angDiff*1.1,-0.5,0.5);
     b.vehicle.setSteeringValue(steer,0); b.vehicle.setSteeringValue(0,1);
-    b.vehicle.applyEngineForce(1700,1); // avance (signe +)
-    b.vehicle.applyEngineForce(0,0);
+    b.vehicle.applyEngineForce(1700,1); b.vehicle.applyEngineForce(0,0);
     b.vehicle.setBrake(0,0); b.vehicle.setBrake(0,1);
   });
 
-  // physique
   world.step(1/60,dt);
 
-  // visuel
   playerMesh.position.copy(player.chassis.position);
   playerMesh.quaternion.copy(player.chassis.quaternion);
   bots.forEach(b=>{ b.vis.position.copy(b.chassis.position); b.vis.quaternion.copy(b.chassis.quaternion); });
 
-  // caméra + HUD
   chase(playerMesh);
   spdEl.textContent=Math.round(player.chassis.velocity.length()*3.6);
-  timeEl.textContent=fmt(now-(window.__lapStart||(window.__lapStart=now)));
-
+  timeEl.textContent=fmt(now-lapStart);
   renderer.render(scene,camera);
 }
 requestAnimationFrame(tick);
 
-// resize
-addEventListener('resize',()=>{ 
-  renderer.setSize(innerWidth,innerHeight); 
-  camera.aspect=innerWidth/innerHeight; 
-  camera.updateProjectionMatrix(); 
-});
+addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
 </script>
 </body>
 </html>
