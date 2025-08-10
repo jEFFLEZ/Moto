@@ -32,46 +32,41 @@
 
 <div id="tips">Z/Q/S/D ou flèches · Espace = frein · Gamepad OK</div>
 
-<script type="module">
-  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js"; 
-  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
-  import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
-
-  // Exemple simple : juste une scène, caméra et rendu
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
-
-  const controls = new OrbitControls(camera, renderer.domElement);
-  camera.position.set(0, 5, 10);
-  controls.update();
-
-  // Lumière
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(5, 10, 5);
-  scene.add(light);
-
-  // Sol
-  const geometry = new THREE.PlaneGeometry(20, 20);
-  const material = new THREE.MeshStandardMaterial({ color: 0x007700 });
-  const plane = new THREE.Mesh(geometry, material);
-  plane.rotation.x = -Math.PI / 2;
-  scene.add(plane);
-
-  // Cube test
-  const cubeGeo = new THREE.BoxGeometry();
-  const cubeMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-  const cube = new THREE.Mesh(cubeGeo, cubeMat);
-  cube.position.y = 0.5;
-  scene.add(cube);
-
-  function animate() {
-    requestAnimationFrame(animate);
-    renderer.render(scene, camera);
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
   }
-  animate();
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js?module";
+import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js?module";
+
+// Exemple simple : juste une scène, caméra et rendu
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+camera.position.set(0, 5, 10);
+controls.update();
+
+// Lumière
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5, 10, 5);
+scene.add(light);
+
+// Sol
+const geometry = new THREE.PlaneGeometry(20, 20);
+const material = new THREE.MeshStandardMaterial({ color: 0x007700 });
+const plane = new THREE.Mesh(geometry, material);
+plane.rotation.x = -Math.PI / 2;
+scene.add(plane);
 </script>
 
 </body>
