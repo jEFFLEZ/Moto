@@ -3,19 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Moto 3D – Arcade</title>
+<title>Moto 3D – Low-poly Cartoon + Bots</title>
 <link rel="icon" href="data:,">
 <style>
-  html,body{margin:0;height:100%;background:#0b0e14;color:#e8ecf1;font-family:system-ui;touch-action:none}
+  html,body{margin:0;height:100%;background:#0b0e14;color:#e8ecf1;font-family:system-ui}
   #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.35);padding:8px 10px;border-radius:8px;backdrop-filter:blur(4px);line-height:1.25}
   #hud b{color:#9be870}
   #tips{position:fixed;right:12px;top:12px;opacity:.85}
-  .pad{position:fixed;bottom:24px;width:42vw;max-width:340px;height:42vw;max-height:340px;border:2px solid rgba(255,255,255,.25);border-radius:50%;opacity:.25}
-  #padL{left:24px} #padR{right:24px}
-  .stick{position:absolute;left:50%;top:50%;width:30%;height:30%;transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.5);border-radius:50%}
-  @media (pointer:fine){ .pad{display:none} }
-  canvas{display:block}
   #pause{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;padding:14px 18px;background:rgba(0,0,0,.55);border-radius:12px;display:none}
+  canvas{display:block}
 </style>
 </head>
 <body>
@@ -25,79 +21,104 @@
   Temps: <b id="time">00:00.000</b><br/>
   Meilleur: <b id="best">--:--.---</b>
 </div>
-<div id="tips">Z/Q/S/D ou flèches · Espace=frein main · N=Nitro · P=Pause · Gamepad OK</div>
-<div id="padL" class="pad"><div class="stick" id="stickL"></div></div>
-<div id="padR" class="pad"><div class="stick" id="stickR"></div></div>
+<div id="tips">Z/Q/S/D ou flèches · Espace=frein · N=Nitro · P=Pause · Gamepad OK</div>
 <div id="pause">PAUSE</div>
 
-<!-- Import map pour “three” -->
+<!-- three + cannon-es -->
 <script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
 </script>
-
 <script type="module">
 import * as THREE from "three";
-import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
 import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
 
-/* ===== Générateur de piste ===== */
-function buildTrack(THREE){
-  const pts=[];
-  for(let a=0;a<Math.PI*2;a+=Math.PI/40){
-    const r = 180 + 60*Math.sin(a*1.7) + 30*Math.sin(a*3.4+1.2);
-    const x = (r+14*Math.sin(a*2.2))*Math.cos(a);
-    const z = (r+14*Math.cos(a*2.5))*Math.sin(a*1.02);
-    pts.push(new THREE.Vector3(x,0,z));
-  }
-  const curve = new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.25);
-  const ROAD_HALF = 6.3, segs = 900;
+/* ---------- helpers ---------- */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000);
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
 
-  const positions = new Float32Array(segs*2*3);
-  const uvs       = new Float32Array(segs*2*2);
-  const indices   = [];
-  let ip=0, iu=0;
+/* ---------- renderer / scene ---------- */
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0b0e14);
+
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,4000);
+camera.position.set(0,6,12);
+
+scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.85));
+const sun=new THREE.DirectionalLight(0xffffff,.9);
+sun.position.set(40,60,30);
+scene.add(sun);
+
+const floor=new THREE.Mesh(
+  new THREE.PlaneGeometry(6000,6000),
+  new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1})
+);
+floor.rotation.x=-Math.PI/2; floor.position.y=-3; floor.receiveShadow=true;
+scene.add(floor);
+
+/* ---------- track with relief & small jumps ---------- */
+function buildTrack(){
+  // ovale paramétrique + reliefs
+  const pts=[]; const segs=700;
+  const RX=220, RZ=140;
   for(let i=0;i<segs;i++){
-    const t = i/(segs-1);
-    const p = curve.getPointAt(t);
-    const tan = curve.getTangentAt(t).normalize();
-    const left = new THREE.Vector3(-tan.z,0,tan.x).normalize();
-    const a = p.clone().addScaledVector(left,-ROAD_HALF);
-    const b = p.clone().addScaledVector(left, ROAD_HALF);
-    positions[ip++]=a.x; positions[ip++]=a.y; positions[ip++]=a.z;
-    positions[ip++]=b.x; positions[ip++]=b.y; positions[ip++]=b.z;
-    uvs[iu++]=0; uvs[iu++]=t*50; uvs[iu++]=1; uvs[iu++]=t*50;
-    if(i<segs-1){ const base=i*2; indices.push(base,base+1,base+2, base+1,base+3,base+2); }
+    const t=i/segs*2*Math.PI;
+    const x=Math.cos(t)*RX;
+    const z=Math.sin(t)*RZ;
+    // reliefs / bosses douces
+    const h = 8*Math.sin(t*2.0) + 3*Math.sin(t*5.0+1.2);
+    // deux petites "tables" (sauts) : relevés localisés
+    const bump=(a,center,w)=>(Math.max(0,1-Math.abs(((a-center+Math.PI*2)%(Math.PI*2))-Math.PI)/w));
+    const j1 = 5 * bump(t, Math.PI*0.25, 0.12);
+    const j2 = 6 * bump(t, Math.PI*1.3 , 0.10);
+    pts.push(new THREE.Vector3(x, (h+j1+j2)*0.4, z));
+  }
+  const curve=new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5);
+
+  const ROAD_HALF=6.8, n=900;
+  const positions=[], uvs=[], indices=[];
+  for(let i=0;i<n;i++){
+    const t=i/(n-1), p=curve.getPointAt(t);
+    const tan=curve.getTangentAt(t).normalize();
+    const left=new THREE.Vector3(-tan.z,0,tan.x).normalize();
+    const a=p.clone().addScaledVector(left,-ROAD_HALF);
+    const b=p.clone().addScaledVector(left, ROAD_HALF);
+    positions.push(a.x,a.y,a.z, b.x,b.y,b.z);
+    uvs.push(0,t*45, 1,t*45);
+    if(i<n-1){ const base=i*2; indices.push(base,base+1,base+2, base+1,base+3,base+2); }
   }
   const geo=new THREE.BufferGeometry();
-  geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
-  geo.setAttribute('uv',new THREE.BufferAttribute(uvs,2));
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
   geo.setIndex(indices); geo.computeVertexNormals();
 
-  const road = new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95}));
-  const shoulder= new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial({color:0x202734,roughness:1}));
-  shoulder.scale.set(1.35,1,1.35);
-  shoulder.position.y=-0.01;
+  const road=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95}));
+  const shoulder=new THREE.Mesh(geo.clone(),new THREE.MeshStandardMaterial({color:0x202734,roughness:1}));
+  shoulder.scale.set(1.35,1,1.35); shoulder.position.y=-0.02;
 
-  const line = new THREE.Group(), dashGeo=new THREE.BoxGeometry(.24,.02,1.55), dashMat=new THREE.MeshStandardMaterial({color:0xbfd2ff});
-  for(let i=0;i<260;i++){
-    const t=i/260,p=curve.getPointAt(t),tan=curve.getTangentAt(t);
+  // ligne centrale
+  const line=new THREE.Group(), dashGeo=new THREE.BoxGeometry(.28,.03,1.6), dashMat=new THREE.MeshStandardMaterial({color:0xbfd2ff});
+  for(let i=0;i<280;i++){
+    const t=i/280,p=curve.getPointAt(t),tan=curve.getTangentAt(t);
     const m=new THREE.Mesh(dashGeo,dashMat);
-    m.position.set(p.x,0.012,p.z);
+    m.position.copy(p).add(new THREE.Vector3(0,0.02,0));
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(tan.x,0,tan.z).normalize());
     line.add(m);
   }
 
-  const checkpoints=[]; const every=75;
-  for(let i=0;i<segs;i+=every){
-    const t=i/(segs-1), p=curve.getPointAt(t), tan=curve.getTangentAt(t).normalize();
-    const n=new THREE.Vector3(-tan.z,0,tan.x).normalize();
-    checkpoints.push({p,n});
-  }
-
-  function lateralInfo(x,z){
-    const P=new THREE.Vector3(x,0,z);
+  function lateralInfo(x,y,z){
+    const P=new THREE.Vector3(x,y,z);
     let bestD=Infinity,bp=null,bn=null;
-    const steps=220;
+    const steps=260;
     for(let i=0;i<=steps;i++){
       const t=i/steps, p=curve.getPointAt(t);
       const d=P.distanceToSquared(p);
@@ -108,248 +129,186 @@ function buildTrack(THREE){
     }
     const to=new THREE.Vector3().subVectors(P,bp);
     const lat=to.dot(bn);
-    return {lat,p:bp,n:bn,dist:Math.sqrt(bestD)};
+    return {lat,p:bp,n:bn};
   }
 
-  return {curve,road,shoulder,line,checkpoints,ROAD_HALF,lateralInfo};
+  return {curve,ROAD_HALF,road,shoulder,line,lateralInfo};
+}
+const track=buildTrack();
+scene.add(track.shoulder,track.road,track.line);
+
+/* ---------- physics ---------- */
+const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
+world.solver.iterations=12;
+
+// piste colliders (ruban de boîtes inclinées YAW + PITCH)
+const SEG_BODIES=180, THICK=0.25;
+for(let i=0;i<SEG_BODIES;i++){
+  const t0=i/SEG_BODIES, t1=(i+1)/SEG_BODIES;
+  const p0=track.curve.getPointAt(t0), p1=track.curve.getPointAt(t1);
+  const dx=p1.x-p0.x, dy=p1.y-p0.y, dz=p1.z-p0.z;
+  const len=Math.max(0.0001,Math.hypot(dx,dz));
+  const half=new CANNON.Vec3(track.ROAD_HALF, THICK/2, len/2);
+  const b=new CANNON.Body({mass:0,shape:new CANNON.Box(half)});
+  b.position.set((p0.x+p1.x)/2,(p0.y+p1.y)/2,(p0.z+p1.z)/2);
+  const yaw=Math.atan2(dx,dz);
+  const pitch=Math.atan2(dy, Math.hypot(dx,dz));
+  b.quaternion.setFromEuler(pitch, yaw, 0, "XYZ");
+  world.addBody(b);
 }
 
-/* ===== Scène & rendu ===== */
-const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth,innerHeight);
-renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-document.body.appendChild(renderer.domElement);
+/* ---------- vehicle factory (raycast) ---------- */
+function makeVehicle(startP){
+  const chassisShape=new CANNON.Box(new CANNON.Vec3(.6,.32,1.05));
+  const chassis=new CANNON.Body({mass:170,shape:chassisShape,position:new CANNON.Vec3(startP.x,startP.y+.7,startP.z)});
+  world.addBody(chassis);
 
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x0b0e14);
-scene.fog = new THREE.FogExp2(0x0b0e14, 0.0016);
-
-const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,2000);
-camera.position.set(0,6,12);
-
-// Lumières
-scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.85));
-const sun=new THREE.DirectionalLight(0xffffff,.9);
-sun.position.set(40,60,30);
-sun.castShadow = true;
-sun.shadow.mapSize.set(1024,1024);
-sun.shadow.camera.near = 1; sun.shadow.camera.far = 200;
-sun.shadow.camera.left = -40; sun.shadow.camera.right = 40;
-sun.shadow.camera.top = 40;  sun.shadow.camera.bottom = -40;
-scene.add(sun);
-
-// Sol
-const floor=new THREE.Mesh(
-  new THREE.PlaneGeometry(4000,4000),
-  new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1})
-);
-floor.rotation.x=-Math.PI/2; floor.position.y=-0.03; floor.receiveShadow=true; scene.add(floor);
-
-// Piste
-const track=buildTrack(THREE);
-track.road.receiveShadow = true;
-track.shoulder.receiveShadow = true;
-scene.add(track.shoulder, track.road, track.line);
-
-/* ===== Physique ===== */
-const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
-world.solver.iterations = 12;
-
-// matériaux & contact (faible friction pour éviter d'accrocher)
-const matGround = new CANNON.Material('ground');
-const matChassis = new CANNON.Material('chassis');
-world.addContactMaterial(new CANNON.ContactMaterial(matGround, matChassis, {
-  friction: 0.02, restitution: 0.0
-}));
-
-// filet de sécurité bas
-const ground = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: matGround });
-ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
-ground.position.y = -2;
-world.addBody(ground);
-
-// colliders route (chevauchement + enfoncement)
-const ROAD_THICKNESS = 0.24, SEG_BODIES = 160;
-for (let i = 0; i < SEG_BODIES; i++) {
-  const t0 = i / SEG_BODIES;
-  const t1 = (i + 1) / SEG_BODIES + 0.0015; // léger chevauchement
-  const p0 = track.curve.getPointAt(t0);
-  const p1 = track.curve.getPointAt(Math.min(1, t1));
-
-  const mid = new CANNON.Vec3((p0.x+p1.x)/2, -0.02, (p0.z+p1.z)/2); // enfoncé de 2 cm
-  const dx = p1.x - p0.x, dz = p1.z - p0.z;
-  const segLen = Math.max(0.0001, Math.hypot(dx, dz));
-
-  const half = new CANNON.Vec3(track.ROAD_HALF, ROAD_THICKNESS/2, segLen/2);
-  const body = new CANNON.Body({ mass:0, shape:new CANNON.Box(half), material: matGround });
-  body.position.copy(mid);
-  body.quaternion.setFromEuler(0, Math.atan2(dx, dz), 0);
-  world.addBody(body);
+  const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
+  const wopt={radius:.36, directionLocal:new CANNON.Vec3(0,-1,0),
+    suspensionRestLength:.28, suspensionStiffness:42, dampingRelaxation:2.4, dampingCompression:4.6,
+    frictionSlip:2.25, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.36,
+    customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
+  };
+  vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .95), radius:.34});
+  vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.95), radius:.37});
+  vehicle.addToWorld(world);
+  return {chassis,vehicle};
 }
 
-/* ===== Moto visuelle ===== */
-const moto = new THREE.Group();
-scene.add(moto);
+/* ---------- low-poly moto visual (cartoon) ---------- */
+function makeMotoMesh(mainHex=0x4caf50){
+  const root=new THREE.Group();
+  const main=new THREE.MeshStandardMaterial({color:mainHex, metalness:.05, roughness:.6});
+  const dark=new THREE.MeshStandardMaterial({color:0x222, metalness:.1, roughness:.8});
+  const light=new THREE.MeshStandardMaterial({color:0xf5f6f8, metalness:.05, roughness:.5});
+  // body
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(1.3,.38,2.1), light); frame.position.y=.4;
+  const seat =new THREE.Mesh(new THREE.BoxGeometry(1.0,.18,1.0), main); seat.position.set(0,.62,-.1);
+  const hood =new THREE.Mesh(new THREE.BoxGeometry(.8,.22,.7),  main); hood.position.set(0,.58,.6);
+  // roues
+  const wheelG=new THREE.TorusGeometry(.36,.08,10,20); const wheelM=dark;
+  const wF=new THREE.Mesh(wheelG,wheelM); wF.rotation.x=Math.PI/2; wF.position.set(0,.38,.95);
+  const wR=wF.clone(); wR.position.z=-.95; wR.scale.set(1.03,1.03,1.03);
+  // guidon
+  const bar=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.65,8), light);
+  bar.rotation.z=Math.PI/2; bar.position.set(0,.92,.45);
+  // phares/plaques
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(.52,.42,.08), light); plate.position.set(0,.85,.85);
+  const fender=new THREE.Mesh(new THREE.BoxGeometry(.9,.08,.5), main); fender.position.set(0,.52,.95);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(.9,.06,.5),  main); tail.position.set(0,.52,-.95);
 
-const loader = new GLTFLoader();
-let glbLoaded = false;
-loader.load(
-  "assets/moto.glb",   // remplace par ton chemin si nécessaire
-  (gltf) => {
-    glbLoaded = true;
-    const model = gltf.scene;
-    model.traverse(o => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        if (o.material) { o.material.roughness = 0.4; o.material.metalness = 0.2; }
-      }
-    });
-    model.scale.set(0.9,0.9,0.9);
-    model.rotation.y = Math.PI; // souvent nécessaire
-    model.position.set(0,0.25,0);
-    moto.add(model);
-  },
-  undefined,
-  () => {
-    // Fallback “cube stylisé” si le GLB n’est pas trouvé
-    if (glbLoaded) return;
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2,.5,2.0), new THREE.MeshStandardMaterial({color:0xf5f6f8,metalness:.1,roughness:.6}));
-    frame.position.y=.35; frame.castShadow=true;
-    const seat  = new THREE.Mesh(new THREE.BoxGeometry(.6,.14,.7), new THREE.MeshStandardMaterial({color:0x7cdfff}));
-    seat.position.set(0,.55,-.15); seat.castShadow=true;
-    const nose  = new THREE.Mesh(new THREE.BoxGeometry(.55,.14,.48), new THREE.MeshStandardMaterial({color:0xff8aa0}));
-    nose.position.set(0,.55,.25); nose.castShadow=true;
-    const wheelF= new THREE.Mesh(new THREE.TorusGeometry(.33,.06,12,24), new THREE.MeshStandardMaterial({color:0x222}));
-    wheelF.rotation.x=Math.PI/2; wheelF.position.set(0,.35,.9); wheelF.castShadow=true;
-    const wheelR= wheelF.clone(); wheelR.position.z=-.9; wheelR.scale.set(1.05,1.05,1.05);
-    moto.add(frame,seat,nose,wheelF,wheelR);
-  }
-);
+  root.add(frame,seat,hood,wF,wR,bar,plate,fender,tail);
+  root.position.y=0.2;
+  return root;
+}
 
-/* ===== Véhicule physique (Raycast) ===== */
-const startP=track.curve.getPointAt(0);
-const chassis=new CANNON.Body({
-  mass:180,
-  shape:new CANNON.Box(new CANNON.Vec3(.6,.3,1.0)),
-  position:new CANNON.Vec3(startP.x,.65,startP.z),
-  material: matChassis
-});
-world.addBody(chassis);
+/* ---------- player + bots ---------- */
+const PLAYER_COLOR=0x4caf50;
+const BOT_COLORS=[0xffd400,0x2196f3,0xf44336];
 
-// petit “skid” sphérique sous le châssis (glisse sur arêtes)
-chassis.addShape(new CANNON.Sphere(0.18), new CANNON.Vec3(0, -0.28, 0));
+const s0=track.curve.getPointAt(0.01);
+const player=makeVehicle(s0);
+const playerMesh=makeMotoMesh(PLAYER_COLOR); scene.add(playerMesh);
 
-const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
-const wopt={radius:.35, directionLocal:new CANNON.Vec3(0,-1,0),
-  suspensionRestLength:.26, suspensionStiffness:38, dampingRelaxation:2.3, dampingCompression:4.4,
-  frictionSlip:2.2, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.35,
-  customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
-};
-vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .9), radius:.33});
-vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.9), radius:.36});
-vehicle.addToWorld(world);
+const bots=[];
+for(let i=0;i<3;i++){
+  const t=(0.88 - i*0.04 + 1)%1;
+  const p=track.curve.getPointAt(t);
+  const b=makeVehicle(p);
+  const m=makeMotoMesh(BOT_COLORS[i%BOT_COLORS.length]);
+  scene.add(m);
+  bots.push({ ...b, vis:m, t });
+}
 
-/* ===== Entrées & HUD ===== */
+/* ---------- input / HUD ---------- */
 const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
 const keys={};
 addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyP'){input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none';}});
 addEventListener('keyup',e=>keys[e.code]=false);
 
-const padL=document.getElementById('padL'), stickL=document.getElementById('stickL');
-const padR=document.getElementById('padR'), stickR=document.getElementById('stickR');
-bindPad(padL,stickL,(dx,dy)=>{ input.steer = clamp(dx,-1,1); });
-bindPad(padR,stickR,(dx,dy)=>{ input.throttle = clamp(-dy,0,1); input.brake = clamp(dy>0?dy:0,0,1); });
-function bindPad(pad,stick,cb){
-  let a=false,id=null,cx=0,cy=0,r=0;
-  const pos=t=>{const rect=pad.getBoundingClientRect();return{x:t.clientX-rect.left,y:t.clientY-rect.top}};
-  const start=t=>{if(a)return;a=true;id=t.pointerId;pad.setPointerCapture(id);const rect=pad.getBoundingClientRect();cx=rect.width/2;cy=rect.height/2;r=rect.width/2;move(t)};
-  const move=t=>{if(!a||t.pointerId!==id)return;const p=pos(t);let dx=p.x-cx,dy=p.y-cy;const m=Math.hypot(dx,dy);if(m>r){dx*=r/m;dy*=r/m} stick.style.left=(50+dx/r*50)+'%'; stick.style.top=(50+dy/r*50)+'%'; cb(dx/r,dy/r)};
-  const end=t=>{if(!a||t.pointerId!==id)return;a=false;try{pad.releasePointerCapture(id)}catch{}; stick.style.left='50%'; stick.style.top='50%'; cb(0,0)};
-  pad.addEventListener('pointerdown',start); pad.addEventListener('pointermove',move); pad.addEventListener('pointerup',end); pad.addEventListener('pointercancel',end);
+const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'), timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
+let laps=0, best=null, lapStart=performance.now();
+
+/* ---------- camera chase ---------- */
+function chase(mesh){
+  const fwd=new THREE.Vector3(0,0,1).applyQuaternion(mesh.quaternion);
+  const upv=new THREE.Vector3(0,1,0);
+  const look=mesh.position.clone().add(fwd.clone().multiplyScalar(4)).add(upv.clone().multiplyScalar(1.6));
+  const cam =mesh.position.clone().add(fwd.clone().multiplyScalar(-10)).add(upv.clone().multiplyScalar(3.8));
+  camera.position.lerp(cam,.12); camera.lookAt(look);
 }
 
-const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'), timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
-let laps=0, best=null, lapStart=performance.now(), nextCP=0;
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
-
-/* ===== Boucle ===== */
+/* ---------- loop ---------- */
 let last=performance.now();
 function tick(now){
   requestAnimationFrame(tick);
   const dt=Math.min(1/60,(now-last)/1000); last=now;
   if(input.paused){ renderer.render(scene,camera); return; }
 
-  // clavier → input
+  // clavier -> input
   const up=!!(keys['ArrowUp']||keys['KeyW']), dn=!!(keys['ArrowDown']||keys['KeyS']);
   const lf=!!(keys['ArrowLeft']||keys['KeyA']), rt=!!(keys['ArrowRight']||keys['KeyD']);
+  const hb=!!keys['Space'], nit=!!keys['KeyN'];
   input.throttle=Math.max(input.throttle, up?1:0);
-  input.brake   =Math.max(input.brake,   dn?1:0);
-  input.steer  += ((lf?-1:0)+(rt?1:0) - input.steer)*0.2;
-  input.hand = !!keys['Space'];
-  input.nitro= !!keys['KeyN'];
+  input.brake   =Math.max(input.brake,    dn?1:0);
+  input.steer += ((lf?-1:0)+(rt?1:0) - input.steer)*0.2;
+  input.hand = hb; input.nitro = nit;
 
-  // paramètres arcade
-  const MAX_ENGINE = input.nitro ? 2600 : 1800;
-  const MAX_STEER  = 0.46;
-  const BRAKE = 48, H_BRAKE = 85;
+  const MAX_ENGINE=input.nitro?2700:1900;
+  const MAX_STEER =0.50;
+  const BRAKE=50, H_BRAKE=88;
 
-  // grip selon si on est sur la route
-  const {lat}=track.lateralInfo(chassis.position.x, chassis.position.z);
-  const onTrack = Math.abs(lat)<=track.ROAD_HALF*1.08;
-  const grip = onTrack?1:0.55;
-
-  // drive
-  vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip, 0);
-  vehicle.setSteeringValue(0,1);
-  vehicle.applyEngineForce(-(input.throttle*MAX_ENGINE)*(onTrack?1:0.55), 1);
-  vehicle.applyEngineForce(0,0);
-  const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
-  vehicle.setBrake(brake,0); vehicle.setBrake(brake,1);
-
-  // physique
-  world.step(1/60,dt);
-
-  // moto suit la physique
-  moto.position.copy(chassis.position);
-  moto.quaternion.copy(chassis.quaternion);
-
-  // petit roulis visuel
-  const speed = chassis.velocity.length();
-  moto.rotation.z = THREE.MathUtils.lerp(moto.rotation.z, -input.steer*0.25*Math.min(1, speed/20), 0.15);
-
-  // caméra chase
-  const fwd=new THREE.Vector3(0,0,1).applyQuaternion(moto.quaternion);
-  const upv=new THREE.Vector3(0,1,0);
-  const look = moto.position.clone().add(fwd.clone().multiplyScalar(4)).add(upv.clone().multiplyScalar(1.6));
-  const cam  = moto.position.clone().add(fwd.clone().multiplyScalar(-10)).add(upv.clone().multiplyScalar(3.8));
-  camera.position.lerp(cam,.12); camera.lookAt(look);
-
-  // tours
-  const cp=track.checkpoints[nextCP];
-  if(cp){
-    const v=new THREE.Vector3(chassis.position.x-cp.p.x,0,chassis.position.z-cp.p.z);
-    const pass= v.length()<track.ROAD_HALF*1.18 && Math.abs(v.dot(cp.n))<track.ROAD_HALF*.9;
-    if(pass){ nextCP++; if(nextCP>=track.checkpoints.length){ nextCP=0; laps++; const t=now-lapStart; if(!best||t<best) best=t; lapStart=now; } }
+  // grip basé sur proximité de la route
+  {
+    const pos=player.chassis.position;
+    const {lat}=track.lateralInfo(pos.x,pos.y,pos.z);
+    const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
+    const grip=onTrack?1:0.6;
+    player.vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip,0);
+    player.vehicle.setSteeringValue(0,1);
+    player.vehicle.applyEngineForce(-(input.throttle*MAX_ENGINE)*(onTrack?1:0.6),1);
+    player.vehicle.applyEngineForce(0,0);
+    const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
+    player.vehicle.setBrake(brake,0); player.vehicle.setBrake(brake,1);
   }
 
-  // HUD
-  spdEl.textContent=Math.round(chassis.velocity.length()*3.6);
-  lapEl.textContent=Math.min(laps,3);
+  // bots : simple suivi de courbe + vitesse constante, la physique fait le reste
+  bots.forEach(b=>{
+    b.t=(b.t+dt*0.055)%1;
+    const tgt=track.curve.getPointAt(b.t);
+    const dir=track.curve.getTangentAt(b.t);
+    const pos=b.chassis.position;
+    const to=new THREE.Vector3(tgt.x-pos.x,tgt.y-pos.y,tgt.z-pos.z); to.y=0; to.normalize();
+    const desiredYaw=Math.atan2(dir.x,dir.z);
+    // approx yaw actuel à partir du quaternion
+    const q=b.chassis.quaternion, ys=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
+    const angDiff=Math.atan2(Math.sin(desiredYaw-ys),Math.cos(desiredYaw-ys));
+    const steer=clamp(angDiff*1.1,-0.5,0.5);
+    b.vehicle.setSteeringValue(steer,0); b.vehicle.setSteeringValue(0,1);
+    b.vehicle.applyEngineForce(-1700,1);
+    b.vehicle.applyEngineForce(0,0);
+    b.vehicle.setBrake(0,0); b.vehicle.setBrake(0,1);
+  });
+
+  // physics
+  world.step(1/60,dt);
+
+  // sync visuals
+  playerMesh.position.copy(player.chassis.position);
+  playerMesh.quaternion.copy(player.chassis.quaternion);
+  bots.forEach(b=>{ b.vis.position.copy(b.chassis.position); b.vis.quaternion.copy(b.chassis.quaternion); });
+
+  // camera + HUD
+  chase(playerMesh);
+  spdEl.textContent=Math.round(player.chassis.velocity.length()*3.6);
   timeEl.textContent=fmt(now-lapStart);
-  bestEl.textContent=best?fmt(best):'--:--.---';
 
   renderer.render(scene,camera);
 }
 requestAnimationFrame(tick);
 
 // resize
-addEventListener('resize',()=>{
-  renderer.setSize(innerWidth,innerHeight);
-  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
-});
+addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
 </script>
 </body>
 </html>
