@@ -227,6 +227,7 @@ export function startGame({ THREE, CANNON, buildTrack }) {
 
     renderer.render(scene, camera);
   }
+  
   requestAnimationFrame(tick);
 
   addEventListener('resize', ()=>{
