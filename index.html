@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Moto 3D – Flat track + bots</title>
+<title>Moto 3D – Flat track</title>
 <link rel="icon" href="data:,">
 <style>
   :root { --bg:#0b0e14; --hud:rgba(0,0,0,.35); --lime:#9be870; }
@@ -12,10 +12,8 @@
   #hud{position:fixed;left:12px;top:12px;background:var(--hud);padding:8px 10px;border-radius:8px;backdrop-filter:blur(4px);line-height:1.25}
   #hud b{color:var(--lime)}
   #tips{position:fixed;right:12px;top:12px;opacity:.85}
-  #pause{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;
-         padding:14px 18px;background:rgba(0,0,0,.55);border-radius:12px;display:none}
-
-  /* Pads tactiles */
+  #pause{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;padding:14px 18px;background:rgba(0,0,0,.55);border-radius:12px;display:none}
+  /* Pads mobile */
   .pad{position:fixed;bottom:22px;width:42vw;max-width:320px;height:42vw;max-height:320px;
        border:2px solid rgba(255,255,255,.28);border-radius:50%;opacity:.28;touch-action:none}
   #padL{left:22px} #padR{right:22px}
@@ -31,12 +29,12 @@
     Temps: <b id="time">00:00.000</b><br/>
     Meilleur: <b id="best">--:--.---</b>
   </div>
-  <div id="tips">Z/Q/S/D ou flèches · Espace=frein · N=Nitro · P=Pause · R=Reset · Gamepad OK</div>
+  <div id="tips">Z/Q/S/D ou flèches · Espace=frein · N=Nitro · P=Pause · R=Reset</div>
   <div id="pause">PAUSE</div>
   <div id="padL" class="pad"><div id="stickL" class="stick"></div></div>
   <div id="padR" class="pad"><div id="stickR" class="stick"></div></div>
 
-  <!-- Import map pour three -->
+  <!-- Import map -->
   <script type="importmap">
   { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
   </script>
@@ -45,39 +43,34 @@
   import * as THREE from "three";
   import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
 
-  /* ========= Helpers ========= */
-  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-  const formatTime = (ms)=>{
-    const m=Math.floor(ms/60000); ms-=m*60000;
-    const s=Math.floor(ms/1000);
-    const r=Math.floor(ms%1000);
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;
-  };
+  // ---------- utils ----------
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000);
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
 
-  /* ========= Renderer & Scene ========= */
-  const renderer = new THREE.WebGLRenderer({antialias:true});
+  // ---------- renderer/scene ----------
+  const renderer=new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(innerWidth,innerHeight);
   renderer.setPixelRatio(Math.min(2, devicePixelRatio||1));
-  renderer.domElement.tabIndex = 0; // capter le clavier
+  renderer.domElement.tabIndex=0;
   document.body.appendChild(renderer.domElement);
 
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0b0e14);
+  const scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x0b0e14);
 
-  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 3000);
+  const camera=new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 3000);
   camera.position.set(0,6,12);
 
   scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.85));
   const sun=new THREE.DirectionalLight(0xffffff,.9); sun.position.set(40,60,30); scene.add(sun);
 
-  // Sol lointain
   const floor=new THREE.Mesh(
     new THREE.PlaneGeometry(4000,4000),
     new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1})
   );
   floor.rotation.x=-Math.PI/2; floor.position.y=-2; floor.receiveShadow=true; scene.add(floor);
 
-  /* ========= Piste plate (ovale) ========= */
+  // ---------- track (ovale plat) ----------
   function buildTrack(){
     const pts=[], segs=700, RX=220, RZ=140;
     for(let i=0;i<segs;i++){
@@ -123,11 +116,7 @@
       for(let i=0;i<=steps;i++){
         const t=i/steps,p=curve.getPointAt(t);
         const d=P.distanceToSquared(p);
-        if(d<bestD){
-          bestD=d; bp=p;
-          const tan=curve.getTangentAt(t).normalize();
-          bn=new THREE.Vector3(-tan.z,0,tan.x).normalize();
-        }
+        if(d<bestD){ bestD=d; bp=p; const tan=curve.getTangentAt(t).normalize(); bn=new THREE.Vector3(-tan.z,0,tan.x).normalize(); }
       }
       const to=new THREE.Vector3().subVectors(P,bp);
       const lat=to.dot(bn);
@@ -139,11 +128,10 @@
   const track=buildTrack();
   scene.add(track.shoulder, track.road, track.line);
 
-  /* ========= Physique (Cannon-es) ========= */
+  // ---------- physics ----------
   const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
   world.solver.iterations=12;
 
-  // Colliders ruban (yaw uniquement, piste plate)
   const SEG_BODIES=180, THICK=0.25;
   for(let i=0;i<SEG_BODIES;i++){
     const t0=i/SEG_BODIES, t1=(i+1)/SEG_BODIES;
@@ -157,7 +145,7 @@
     world.addBody(body);
   }
 
-  /* ========= Véhicule ========= */
+  // ---------- vehicle ----------
   function makeVehicle(startT){
     const p=track.curve.getPointAt(startT);
     const tan=track.curve.getTangentAt(startT);
@@ -202,19 +190,11 @@
     root.position.y=0.2; return root;
   }
 
-  /* ========= Joueur + bots ========= */
+  // ---------- player ----------
   const player = makeVehicle(0.02);
   const motoPlayer = makeMotoMesh(0x4caf50); scene.add(motoPlayer);
 
-  const bots=[], BOT_COLORS=[0xffd400,0x2196f3,0xf44336];
-  for(let i=0;i<3;i++){
-    const t=(0.78 - i*0.05 + 1)%1;
-    const b=makeVehicle(t);
-    const m=makeMotoMesh(BOT_COLORS[i%BOT_COLORS.length]);
-    scene.add(m); bots.push({ ...b, vis:m, t });
-  }
-
-  /* ========= Entrées (clavier + pads) ========= */
+  // ---------- input ----------
   const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
   const keys={};
 
@@ -225,19 +205,20 @@
   }
   addEventListener('keydown',e=>{
     setKey(e,true);
-    if(e.code==='KeyP'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
-    if(e.code==='KeyR'){ resetOnTrack(player.chassis); }
+    if(e.code==='KeyP') { input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
+    if(e.code==='KeyR') resetOnTrack(player.chassis);
   }, {passive:false});
   addEventListener('keyup',e=>setKey(e,false), {passive:false});
   renderer.domElement.addEventListener('click',()=>renderer.domElement.focus());
+  renderer.domElement.focus();
 
-  // Pads (empêche le scroll avec passive:false)
+  // Pads
   function bindPad(pad,stick,cb){
     let act=false,id=null,cx=0,cy=0,r=0;
     const rect=()=>pad.getBoundingClientRect();
     const pos=t=>({x:t.clientX-rect().left, y:t.clientY-rect().top});
     const start=t=>{ if(act) return; act=true; id=t.pointerId; pad.setPointerCapture(id);
-      const rc=rect(); cx=rc.width/2; cy=rc.height/2; r=rc.width/2; move(t); t.preventDefault(); };
+      const rc=rect(); cx=rc.width/2; cy=rc.height/2; r=rc.width/2; move(t); };
     const move=t=>{ if(!act||t.pointerId!==id) return; const p=pos(t); let dx=p.x-cx, dy=p.y-cy;
       const m=Math.hypot(dx,dy); if(m>r){ dx*=r/m; dy*=r/m; }
       stick.style.left=(50+dx/r*50)+'%'; stick.style.top=(50+dy/r*50)+'%'; cb(dx/r,dy/r); t.preventDefault(); };
@@ -253,6 +234,7 @@
   bindPad(document.getElementById('padR'), document.getElementById('stickR'),
     (dx,dy)=>{ input.throttle = clamp(-dy,0,1); input.brake = clamp(dy>0?dy:0,0,1); });
 
+  // Reset sur la piste proche
   function resetOnTrack(body){
     const p=body.position; let bestD=Infinity,bestT=0;
     const STEPS=360;
@@ -267,10 +249,8 @@
     body.quaternion.setFromEuler(0,yaw,0,'XYZ');
   }
 
-  /* ========= HUD & cam ========= */
-  const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'), timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
-  let laps=0, best=null, lapStart=performance.now();
-
+  // ---------- HUD & camera ----------
+  const spdEl=document.getElementById('spd'), timeEl=document.getElementById('time');
   function chase(mesh){
     const fwd=new THREE.Vector3(0,0,1).applyQuaternion(mesh.quaternion);
     const up=new THREE.Vector3(0,1,0);
@@ -279,14 +259,17 @@
     camera.position.lerp(pos,.12); camera.lookAt(look);
   }
 
-  /* ========= Boucle ========= */
-  let last=performance.now();
+  // ---------- auto-fix moteur ----------
+  let DRIVE_SIGN = Number(localStorage.getItem('driveSign') || '-1'); // -1 par défaut
+  let deadTimer = 0;
+
+  // ---------- loop ----------
+  let last=performance.now(), startT=performance.now();
   function tick(now){
     requestAnimationFrame(tick);
     const dt=Math.min(1/60,(now-last)/1000); last=now;
     if(input.paused){ renderer.render(scene,camera); return; }
 
-    // Clavier -> input (pads gardent leur valeur)
     const up = !!(keys['ArrowUp'] || keys['KeyW'] || keys['KeyZ']);
     const dn = !!(keys['ArrowDown'] || keys['KeyS']);
     const lf = !!(keys['ArrowLeft'] || keys['KeyA'] || keys['KeyQ']);
@@ -301,62 +284,46 @@
     const MAX_STEER  = 0.52;
     const BRAKE      = 52, H_BRAKE = 90;
 
-    // Joueur
-    {
+    { // player drive
       const pos=player.chassis.position;
       const {lat}=track.lateralInfo(pos.x,pos.z);
       const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
       const grip=onTrack?1:0.6;
-window.applyPlayerDrive = function(MAX_ENGINE, MAX_STEER, BRAKE, onTrack, grip) {
-  player.vehicle.setSteeringValue(clamp(input.steer, -1, 1) * MAX_STEER * grip, 0);
-  player.vehicle.setSteeringValue(0, 1);
 
-  player.vehicle.setBrake(0, 0);
-  player.vehicle.setBrake(0, 1);
+      player.vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip, 0);
+      player.vehicle.setSteeringValue(0,1);
 
-  const engine = (input.throttle * MAX_ENGINE) * (onTrack ? 1 : 0.6);
-  console.log("Throttle:", input.throttle, "Engine force:", engine);
+      const engine = (input.throttle*MAX_ENGINE) * (onTrack?1:0.6);
+      player.vehicle.applyEngineForce(DRIVE_SIGN * engine, 1); // moteur arrière
+      player.vehicle.applyEngineForce(0, 0);
 
-  player.vehicle.applyEngineForce(1 * engine, 1); // Try forcing sign to 1
-  player.vehicle.applyEngineForce(0, 0);
-
-  const br = (input.brake ? BRAKE : 0) + (input.hand ? 90 : 0);
-  player.vehicle.setBrake(br, 0);
-  player.vehicle.setBrake(br, 1);
-    };
+      const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
+      player.vehicle.setBrake(brake,0); player.vehicle.setBrake(brake,1);
     }
-
-    // Bots
-    bots.forEach(b=>{
-      b.t=(b.t+dt*0.055)%1;
-      const dir=track.curve.getTangentAt(b.t);
-      const desiredYaw=Math.atan2(dir.x,dir.z);
-
-      const q=b.chassis.quaternion;
-      const ys=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
-      const angDiff=Math.atan2(Math.sin(desiredYaw-ys),Math.cos(desiredYaw-ys));
-      const steer=clamp(angDiff*1.1,-0.5,0.5);
-
-      b.vehicle.setSteeringValue(steer,0); b.vehicle.setSteeringValue(0,1);
-      b.vehicle.applyEngineForce(1700,1);
-      b.vehicle.applyEngineForce(0,0);
-      b.vehicle.setBrake(0,0); b.vehicle.setBrake(0,1);
-    });
 
     world.step(1/60,dt);
 
-    // Sync meshes
+    // auto-unsuck si ça n'avance pas
+    const speedKmh = player.chassis.velocity.length()*3.6;
+    if (input.throttle>0.5 && speedKmh<1.0) deadTimer += dt; else deadTimer = 0;
+    if (deadTimer > 0.8) {
+      DRIVE_SIGN *= -1;
+      localStorage.setItem('driveSign', String(DRIVE_SIGN));
+      resetOnTrack(player.chassis);
+      deadTimer = 0;
+      console.log('[drive] flip sign ->', DRIVE_SIGN);
+    }
+
+    // sync mesh + HUD + cam
     motoPlayer.position.copy(player.chassis.position);
     motoPlayer.quaternion.copy(player.chassis.quaternion);
-    bots.forEach(b=>{ b.vis.position.copy(b.chassis.position); b.vis.quaternion.copy(b.chassis.quaternion); });
-
     chase(motoPlayer);
-    spdEl.textContent=Math.round(player.chassis.velocity.length()*3.6);
-    timeEl.textContent=formatTime(now-lapStart);
+    spdEl.textContent = Math.round(speedKmh);
+    timeEl.textContent = fmt(now - startT);
 
     renderer.render(scene,camera);
 
-    // relâchement progressif si le clavier n’appuie plus
+    // relâche progressif si pas de touche
     input.throttle = up ? 1 : input.throttle*0.98;
     input.brake    = dn ? 1 : input.brake*0.98;
   }
