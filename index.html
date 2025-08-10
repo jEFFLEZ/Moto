@@ -174,7 +174,24 @@ function makeVehicle(startP){
   vehicle.addToWorld(world);
   return {chassis,vehicle};
 }
+// steering
+vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip, 0);
+vehicle.setSteeringValue(0,1);
 
+// release any residual brake before engine force
+vehicle.setBrake(0,0); 
+vehicle.setBrake(0,1);
+
+// NOTE: flip sign (+ instead of -). RaycastVehicle drives along -Z internally,
+// and our chassis is facing the opposite direction on the hosted build.
+const engine = (input.throttle*MAX_ENGINE) * (onTrack ? 1 : 0.55);
+vehicle.applyEngineForce(engine, 1);   // rear wheel
+vehicle.applyEngineForce(0, 0);        // no engine on front
+
+// brakes
+const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
+vehicle.setBrake(brake,0); 
+vehicle.setBrake(brake,1);
 /* ---------- moto low-poly ---------- */
 function makeMotoMesh(mainHex=0x4caf50){
   const root=new THREE.Group();
