@@ -42,7 +42,7 @@ const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth,innerHeight);
 renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
-renderer.domElement.tabIndex = 0; // focusable
+renderer.domElement.tabIndex = 0;
 document.body.appendChild(renderer.domElement);
 
 const scene=new THREE.Scene();
@@ -63,7 +63,7 @@ const floor=new THREE.Mesh(
 floor.rotation.x=-Math.PI/2; floor.position.y=-3; floor.receiveShadow=true;
 scene.add(floor);
 
-/* ---------- track relief/sauts ---------- */
+/* ---------- piste ---------- */
 function buildTrack(){
   const pts=[]; const segs=700;
   const RX=220, RZ=140;
@@ -131,12 +131,11 @@ function buildTrack(){
 const track=buildTrack();
 scene.add(track.shoulder,track.road,track.line);
 
-/* ---------- physics ---------- */
+/* ---------- physique ---------- */
 const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
-world.allowSleep = false;                // anti-sleep global
+world.allowSleep = false;
 world.solver.iterations=12;
 
-// piste colliders inclinés (yaw + pitch)
 const SEG_BODIES=180, THICK=0.25;
 for(let i=0;i<SEG_BODIES;i++){
   const t0=i/SEG_BODIES, t1=(i+1)/SEG_BODIES;
@@ -158,7 +157,7 @@ function makeVehicle(startP){
   const chassis=new CANNON.Body({
     mass:170,
     shape:chassisShape,
-    position:new CANNON.Vec3(startP.x,startP.y+1.1,startP.z) // +hauteur
+    position:new CANNON.Vec3(startP.x,startP.y+1.1,startP.z)
   });
   chassis.allowSleep = false;
   world.addBody(chassis);
@@ -174,24 +173,7 @@ function makeVehicle(startP){
   vehicle.addToWorld(world);
   return {chassis,vehicle};
 }
-// steering
-vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip, 0);
-vehicle.setSteeringValue(0,1);
 
-// release any residual brake before engine force
-vehicle.setBrake(0,0); 
-vehicle.setBrake(0,1);
-
-// NOTE: flip sign (+ instead of -). RaycastVehicle drives along -Z internally,
-// and our chassis is facing the opposite direction on the hosted build.
-const engine = (input.throttle*MAX_ENGINE) * (onTrack ? 1 : 0.55);
-vehicle.applyEngineForce(engine, 1);   // rear wheel
-vehicle.applyEngineForce(0, 0);        // no engine on front
-
-// brakes
-const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
-vehicle.setBrake(brake,0); 
-vehicle.setBrake(brake,1);
 /* ---------- moto low-poly ---------- */
 function makeMotoMesh(mainHex=0x4caf50){
   const root=new THREE.Group();
@@ -214,7 +196,7 @@ function makeMotoMesh(mainHex=0x4caf50){
   return root;
 }
 
-/* ---------- player + bots ---------- */
+/* ---------- joueur + bots ---------- */
 const PLAYER_COLOR=0x4caf50;
 const BOT_COLORS=[0xffd400,0x2196f3,0xf44336];
 
@@ -235,7 +217,6 @@ for(let i=0;i<3;i++){
 /* ---------- input + reset ---------- */
 const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
 const keys = {};
-
 const setKey = (e, isDown) => {
   const k = e.code || e.key;
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
@@ -271,11 +252,8 @@ function resetOnTrack(body) {
   body.quaternion.setFromEuler(0, yaw, 0, 'XYZ');
 }
 
-/* ---------- HUD ---------- */
+/* ---------- HUD + caméra ---------- */
 const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'), timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
-let laps=0, best=null, lapStart=performance.now();
-
-/* ---------- camera ---------- */
 function chase(mesh){
   const fwd=new THREE.Vector3(0,0,1).applyQuaternion(mesh.quaternion);
   const upv=new THREE.Vector3(0,1,0);
@@ -284,7 +262,7 @@ function chase(mesh){
   camera.position.lerp(cam,.12); camera.lookAt(look);
 }
 
-/* ---------- loop ---------- */
+/* ---------- boucle ---------- */
 let last=performance.now();
 function tick(now){
   requestAnimationFrame(tick);
@@ -306,50 +284,19 @@ function tick(now){
   const MAX_STEER  = 0.52;
   const BRAKE      = 52, H_BRAKE = 90;
 
-  {
-    const pos=player.chassis.position;
-    const {lat}=track.lateralInfo(pos.x,pos.y,pos.z);
-    const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
-    const grip=onTrack?1:0.6;
-    player.vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip,0);
-    player.vehicle.setSteeringValue(0,1);
-    player.vehicle.applyEngineForce(-(input.throttle*MAX_ENGINE)*(onTrack?1:0.6),1);
-    player.vehicle.applyEngineForce(0,0);
-    const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
-    player.vehicle.setBrake(brake,0); player.vehicle.setBrake(brake,1);
-  }
+  const pos=player.chassis.position;
+  const {lat}=track.lateralInfo(pos.x,pos.y,pos.z);
+  const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
+  const grip=onTrack?1:0.6;
+
+  // Inversé ici
+  player.vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip,0);
+  player.vehicle.setSteeringValue(0,1);
+  player.vehicle.applyEngineForce((input.throttle*MAX_ENGINE)*(onTrack?1:0.6),1);
+  player.vehicle.applyEngineForce(0,0);
+  const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
+  player.vehicle.setBrake(brake,0); player.vehicle.setBrake(brake,1);
 
   bots.forEach(b=>{
     b.t=(b.t+dt*0.055)%1;
-    const tgt=track.curve.getPointAt(b.t);
-    const dir=track.curve.getTangentAt(b.t);
-    const pos=b.chassis.position;
-    const desiredYaw=Math.atan2(dir.x,dir.z);
-    const q=b.chassis.quaternion;
-    const ys=Math.atan2(2*(q.w*q.y+q.x*q.z),1-2*(q.y*q.y+q.z*q.z));
-    const angDiff=Math.atan2(Math.sin(desiredYaw-ys),Math.cos(desiredYaw-ys));
-    const steer=clamp(angDiff*1.1,-0.5,0.5);
-    b.vehicle.setSteeringValue(steer,0); b.vehicle.setSteeringValue(0,1);
-    b.vehicle.applyEngineForce(-1700,1);
-    b.vehicle.applyEngineForce(0,0);
-    b.vehicle.setBrake(0,0); b.vehicle.setBrake(0,1);
-  });
-
-  world.step(1/60,dt);
-
-  playerMesh.position.copy(player.chassis.position);
-  playerMesh.quaternion.copy(player.chassis.quaternion);
-  bots.forEach(b=>{ b.vis.position.copy(b.chassis.position); b.vis.quaternion.copy(b.chassis.quaternion); });
-
-  chase(playerMesh);
-  spdEl.textContent=Math.round(player.chassis.velocity.length()*3.6);
-  timeEl.textContent=fmt(now-lapStart);
-
-  renderer.render(scene,camera);
-}
-requestAnimationFrame(tick);
-
-addEventListener('resize',()=>{ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); });
-</script>
-</body>
-</html>
+    const dir=track.curve
