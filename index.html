@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta charset="UTF-8">
   <title>Jeu Moto 3D</title>
   <style>
@@ -44,7 +45,12 @@
 import * as THREE from "three";
 import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js?module";
-
+const cube = new THREE.Mesh(
+  new THREE.BoxGeometry(1,1,1),
+  new THREE.MeshStandardMaterial({ color: 0xff4444 })
+);
+cube.position.y = 0.5;
+scene.add(cube);
 // Exemple simple : juste une scène, caméra et rendu
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -67,6 +73,19 @@ const material = new THREE.MeshStandardMaterial({ color: 0x007700 });
 const plane = new THREE.Mesh(geometry, material);
 plane.rotation.x = -Math.PI / 2;
 scene.add(plane);
+function animate() {
+  requestAnimationFrame(animate);
+  cube.rotation.y += 0.01;   // juste pour voir que ça vit
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+});
 </script>
 
 </body>
