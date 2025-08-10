@@ -142,54 +142,60 @@
   }
 
   /* ---------- vehicle (unique et correct) ---------- */
-  function makeVehicle(startT){
-    const p=track.curve.getPointAt(startT);
-    const tan=track.curve.getTangentAt(startT);
-    const yaw=Math.atan2(tan.x,tan.z);
+  function makeVehicle(startT) {
+  // Point + orientation
+  const p   = track.curve.getPointAt(startT);
+  const tan = track.curve.getTangentAt(startT);
+  const yaw = Math.atan2(tan.x, tan.z);
 
-    // 1) châssis plus bas
-const chassis = new CANNON.Body({
-  mass: 170,
-  shape: new CANNON.Box(new CANNON.Vec3(0.6, 0.32, 1.05)),
-  position: new CANNON.Vec3(p.x, 0.58, p.z) // <-- au lieu de 0.9
-});
+  // Châssis plus bas pour que les roues touchent
+  const chassis = new CANNON.Body({
+    mass: 170,
+    shape: new CANNON.Box(new CANNON.Vec3(0.6, 0.32, 1.05)),
+    position: new CANNON.Vec3(p.x, 0.58, p.z)   // <<< 0.58 au lieu de 0.9
+  });
+  chassis.quaternion.setFromEuler(0, yaw, 0, "XYZ");
+  world.addBody(chassis);
 
-// 2) roues/suspensions un poil plus longues
-const R_FRONT = 0.40;   // 0.34 -> 0.40
-const R_REAR  = 0.42;   // 0.36 -> 0.42
+  // IMPORTANT: créer le véhicule AVANT d'appeler addWheel
+  const veh = new CANNON.RaycastVehicle({ chassisBody: chassis });
 
-const wopt = {
-  radius: R_FRONT,
-  directionLocal: new CANNON.Vec3(0, -1, 0),
-  suspensionRestLength: 0.33,         // 0.28 -> 0.33
-  suspensionStiffness: 42,
-  dampingRelaxation: 2.4,
-  dampingCompression: 4.6,
-  frictionSlip: 2.3,
-  axleLocal: new CANNON.Vec3(1, 0, 0),
-  maxSuspensionForce: 1e4,
-  maxSuspensionTravel: 0.42,          // 0.36 -> 0.42
-  customSlidingRotationalSpeed: -30,
-  useCustomSlidingRotationalSpeed: true
-};
-    // Avant (0,1)
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK/2,0, WB/2), radius:R_FRONT});
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK/2,0, WB/2), radius:R_FRONT});
-    // Arrière (2,3)
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK/2,0,-WB/2), radius:R_REAR});
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK/2,0,-WB/2), radius:R_REAR});
+  // “moto stable” = 4 roues proches
+  const TRACK   = 0.36;
+  const WB      = 1.90;
+  const R_FRONT = 0.40;   // un peu plus grand
+  const R_REAR  = 0.42;
 
-    vehicle.addToWorld(world);
-    // après vehicle.addToWorld(world);
-setTimeout(()=>{
-  console.log('contact AV gauche ?', vehicle.wheelInfos[0].isInContact);
-}, 500);
+  const wopt = {
+    radius: R_FRONT,
+    directionLocal: new CANNON.Vec3(0, -1, 0),
+    suspensionRestLength: 0.33,     // + long => contact garanti
+    suspensionStiffness: 42,
+    dampingRelaxation: 2.4,
+    dampingCompression: 4.6,
+    frictionSlip: 2.3,
+    axleLocal: new CANNON.Vec3(1, 0, 0),
+    maxSuspensionForce: 1e4,
+    maxSuspensionTravel: 0.42,      // un poil plus
+    customSlidingRotationalSpeed: -30,
+    useCustomSlidingRotationalSpeed: true
+  };
 
-    chassis.angularFactor.set(0,1,0);
-    chassis.angularDamping=0.3;
+  // Avant (0,1) — direction
+  veh.addWheel({ ...wopt, chassisConnectionPointLocal: new CANNON.Vec3(-TRACK/2, 0,  WB/2), radius: R_FRONT });
+  veh.addWheel({ ...wopt, chassisConnectionPointLocal: new CANNON.Vec3( TRACK/2, 0,  WB/2), radius: R_FRONT });
 
-    return {chassis,vehicle};
-  }
+  // Arrière (2,3) — motrices
+  veh.addWheel({ ...wopt, chassisConnectionPointLocal: new CANNON.Vec3(-TRACK/2, 0, -WB/2), radius: R_REAR });
+  veh.addWheel({ ...wopt, chassisConnectionPointLocal: new CANNON.Vec3( TRACK/2, 0, -WB/2), radius: R_REAR });
+
+  veh.addToWorld(world);
+
+  // Anti-bascule “arcade”
+  chassis.angularFactor.set(0, 1, 0);
+  chassis.angularDamping = 0.3;
+
+  return { chassis, vehicle: veh };    // <<< retourne bien 'veh'
 
   function makeMotoMesh(color=0x4caf50){
     const root=new THREE.Group();
@@ -285,31 +291,30 @@ setTimeout(()=>{
     input.hand     = !!keys['Space'];
     input.nitro    = !!keys['KeyN'];
 
-    const MAX_ENGINE = input.nitro ? 2800 : 2000;
-    const MAX_STEER  = 0.52;
-    const BRAKE      = 52, H_BRAKE = 90;
+    // paramètres
+const MAX_ENGINE = input.nitro ? 2800 : 2000;
+const MAX_STEER  = 0.52;
+const BRAKE      = 52, H_BRAKE = 90;
 
-    // drive (calcul grip avant d'appliquer)
-    const pos=player.chassis.position;
-    const {lat}=track.lateralInfo(pos.x,pos.z);
-    const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
-    const grip=onTrack?1:0.6;
+// grip piste
+const pos = player.chassis.position;
+const { lat } = track.lateralInfo(pos.x, pos.z);
+const onTrack = Math.abs(lat) <= track.ROAD_HALF * 1.05;
+const grip = onTrack ? 1 : 0.6;
 
-    // direction roues avant (0,1)
-    const steerVal = clamp(input.steer,-1,1) * MAX_STEER * grip;
-    player.vehicle.setSteeringValue(steerVal,0);
-    player.vehicle.setSteeringValue(steerVal,1);
+// direction (roues avant 0,1)
+const steerVal = clamp(input.steer, -1, 1) * MAX_STEER * grip;
+player.vehicle.setSteeringValue(steerVal, 0);
+player.vehicle.setSteeringValue(steerVal, 1);
 
-    // moteur roues arrière (2,3)
-    const engine = (input.throttle*MAX_ENGINE) * (onTrack?1:0.6);
-    player.vehicle.applyEngineForce(DRIVE_SIGN * engine * -1, 2);
-    player.vehicle.applyEngineForce(DRIVE_SIGN * engine * -1, 3);
+// moteur (roues arrière 2,3) — forward = force négative
+const engine = (input.throttle * MAX_ENGINE) * (onTrack ? 1 : 0.6);
+player.vehicle.applyEngineForce(-engine, 2);
+player.vehicle.applyEngineForce(-engine, 3);
 
-    // frein toutes roues
-    const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
-    for(let i=0;i<4;i++) player.vehicle.setBrake(brake,i);
-
-    world.step(1/60,dt);
+// freins (toutes)
+const brake = (input.brake ? BRAKE : 0) + (input.hand ? H_BRAKE : 0);
+for (let i = 0; i < 4; i++) player.vehicle.setBrake(brake, i);
 
     // auto-unsuck
     const speedKmh = player.chassis.velocity.length()*3.6;
