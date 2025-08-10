@@ -312,7 +312,7 @@
       player.vehicle.setSteeringValue(0,1);
 
       const engine = (input.throttle*MAX_ENGINE) * (onTrack?1:0.6);
-      player.vehicle.applyEngineForce(-engine, 1); // roue arrière (1)
+      player.vehicle.applyEngineForce(engine, 1); // roue arrière (1)
       player.vehicle.applyEngineForce(0, 0);
 
       const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
@@ -331,7 +331,7 @@
       const steer=clamp(angDiff*1.1,-0.5,0.5);
 
       b.vehicle.setSteeringValue(steer,0); b.vehicle.setSteeringValue(0,1);
-      b.vehicle.applyEngineForce(-1700,1);
+      b.vehicle.applyEngineForce(1700,1);
       b.vehicle.applyEngineForce(0,0);
       b.vehicle.setBrake(0,0); b.vehicle.setBrake(0,1);
     });
