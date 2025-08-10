@@ -247,17 +247,31 @@
   const keys={};
   const setKey=(e,d)=>{ const k=e.code||e.key; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); keys[k]=d; };
 
-  addEventListener('keydown',e=>{ setKey(e,true);
-    if (e.code === 'KeyB') {
-    playerDebug.setVisible(!playerDebug.group.visible);
-  }
+  window.addEventListener('keydown', (e) => {
+    keys[e.code] = true;
 
-    if(e.code==='KeyP'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
-    if(e.code==='KeyR'){ resetOnTrack(player.chassis); }
-   {passive:false};
-  addEventListener('keyup',e=>setKey(e,false),{passive:false});
-  renderer.domElement.addEventListener('click',()=>renderer.domElement.focus());
-  renderer.domElement.focus();
+    // Toggle debug visuel
+    if (e.code === 'KeyB') {
+        playerDebug.setVisible(!playerDebug.group.visible);
+    }
+
+    // Reset
+    if (e.code === 'KeyR') {
+        resetPlayer();
+    }
+
+    // Pause
+    if (e.code === 'KeyP') {
+        paused = !paused;
+    }
+
+    // Toggle UI
+    if (e.code === 'KeyH') {
+        const ui = document.getElementById('ui');
+        if (ui) ui.style.display = ui.style.display === 'none' ? '' : 'none';
+    }
+
+}, { passive: false });
 
   // pads tactiles
   function bindPad(pad,stick,cb){
@@ -348,7 +362,7 @@
     for(let i=0;i<4;i++) player.vehicle.setBrake(brake,i);
 
     world.step(1/60,dt);
-    playerDebug.update();
+playerDebug.update();
     // visuel + HUD + cam
     carMesh.position.copy(player.chassis.position);
     carMesh.quaternion.copy(player.chassis.quaternion);
