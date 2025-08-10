@@ -254,7 +254,7 @@
 }, { passive:false });
     if(e.code==='KeyP'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
     if(e.code==='KeyR'){ resetOnTrack(player.chassis); }
-  },{passive:false});
+   {passive:false};
   addEventListener('keyup',e=>setKey(e,false),{passive:false});
   renderer.domElement.addEventListener('click',()=>renderer.domElement.focus());
   renderer.domElement.focus();
