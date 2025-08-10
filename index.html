@@ -238,6 +238,7 @@
 
   /* ---------- player ---------- */
   const player = makeCarVehicle(0.02);
+  const playerDebug = createVehicleDebug(scene, player.vehicle);
   const carMesh = makeCarMesh(0xff4d4d);
   scene.add(carMesh);
 
@@ -247,6 +248,10 @@
   const setKey=(e,d)=>{ const k=e.code||e.key; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); keys[k]=d; };
 
   addEventListener('keydown',e=>{ setKey(e,true);
+    if (e.code === 'KeyB') {
+    playerDebug.setVisible(!playerDebug.group.visible);
+  }
+}, { passive:false });
     if(e.code==='KeyP'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
     if(e.code==='KeyR'){ resetOnTrack(player.chassis); }
   },{passive:false});
@@ -343,7 +348,7 @@
     for(let i=0;i<4;i++) player.vehicle.setBrake(brake,i);
 
     world.step(1/60,dt);
-
+    playerDebug.update();
     // visuel + HUD + cam
     carMesh.position.copy(player.chassis.position);
     carMesh.quaternion.copy(player.chassis.quaternion);
@@ -357,6 +362,79 @@
     if(!up) input.throttle*=0.98;
     if(!dn) input.brake*=0.98;
   }
+  // ===== Debug RaycastVehicle (THREE + cannon-es) =====
+function createVehicleDebug(scene, vehicle) {
+  const group = new THREE.Group();
+  group.visible = false;                 // masqué par défaut (toggle avec "B")
+  scene.add(group);
+
+  const items = []; // {sphere,line,contact}
+
+  const sphereGeo = new THREE.SphereGeometry(0.18, 16, 16);
+  const contactGeo = new THREE.SphereGeometry(0.08, 12, 12);
+
+  for (let i = 0; i < vehicle.wheelInfos.length; i++) {
+    const col = (i < 2) ? 0x00d0ff : 0xff4d4d; // avant = bleu, arrière = rouge
+    const sphere = new THREE.Mesh(
+      sphereGeo,
+      new THREE.MeshBasicMaterial({ color: col, wireframe: true })
+    );
+
+    const lineMat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.8 });
+    const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, -1, 0)]);
+    const line = new THREE.Line(lineGeo, lineMat);
+
+    const contact = new THREE.Mesh(
+      contactGeo,
+      new THREE.MeshBasicMaterial({ color: 0x00ff66 })
+    );
+    contact.visible = false;
+
+    const node = new THREE.Group();
+    node.add(sphere, line, contact);
+    group.add(node);
+
+    items.push({ node, sphere, line, contact });
+  }
+
+  function update() {
+    for (let i = 0; i < vehicle.wheelInfos.length; i++) {
+      vehicle.updateWheelTransform(i);                  // met à jour wheelInfos[i].worldTransform
+      const wi = vehicle.wheelInfos[i];
+
+      // position/rotation de la roue
+      const wp = wi.worldTransform.position;
+      const wq = wi.worldTransform.quaternion;
+
+      const it = items[i];
+      it.node.position.set(wp.x, wp.y, wp.z);
+      it.node.quaternion.set(wq.x, wq.y, wq.z, wq.w);
+
+      // rayon de suspension (longueur actuelle)
+      const rest = wi.suspensionRestLength || 0.3;
+      const cur  = wi.suspensionLength != null ? wi.suspensionLength : rest; // cannon-es
+      const p0 = new THREE.Vector3(0, 0, 0);
+      const p1 = new THREE.Vector3(0, -(rest + cur)*0.5, 0);  // juste pour visualiser
+      it.line.geometry.setFromPoints([p0, p1]);
+
+      // point de contact si hit
+      const rr = wi.raycastResult;
+      if (rr && rr.hasHit) {
+        it.contact.visible = true;
+        it.contact.position.set(rr.hitPointWorld.x - wp.x, rr.hitPointWorld.y - wp.y, rr.hitPointWorld.z - wp.z);
+      } else {
+        it.contact.visible = false;
+      }
+    }
+  }
+
+  return {
+    group,
+    update,
+    setVisible(v) { group.visible = v; }
+  };
+}
+
   requestAnimationFrame(tick);
 
   addEventListener('resize',()=>{
