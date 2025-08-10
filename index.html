@@ -30,22 +30,18 @@
 <div id="padR" class="pad"><div class="stick" id="stickR"></div></div>
 <div id="pause">PAUSE</div>
 
-<!-- Mappe “three” pour que les modules examples s’y retrouvent -->
+<!-- Import map: permet aux modules “examples” de Three d’importer “three” -->
 <script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-  }
-}
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
 </script>
 
 <script type="module">
 import * as THREE from "three";
 import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
 
-/* ===== Piste ===== */
+/* ===== Générateur de piste ===== */
 function buildTrack(THREE){
-  const pts = [];
+  const pts=[]; // courbe fermée façon “route de campagne”
   for(let a=0;a<Math.PI*2;a+=Math.PI/40){
     const r = 180 + 60*Math.sin(a*1.7) + 30*Math.sin(a*3.4+1.2);
     const x = (r+14*Math.sin(a*2.2))*Math.cos(a);
@@ -53,10 +49,11 @@ function buildTrack(THREE){
     pts.push(new THREE.Vector3(x,0,z));
   }
   const curve = new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.25);
-  const ROAD_HALF = 6.2, segs = 900;
+  const ROAD_HALF = 6.3, segs = 900;
+
   const positions = new Float32Array(segs*2*3);
-  const uvs = new Float32Array(segs*2*2);
-  const indices = [];
+  const uvs       = new Float32Array(segs*2*2);
+  const indices   = [];
   let ip=0, iu=0;
   for(let i=0;i<segs;i++){
     const t = i/(segs-1);
@@ -75,11 +72,7 @@ function buildTrack(THREE){
   geo.setAttribute('uv',new THREE.BufferAttribute(uvs,2));
   geo.setIndex(indices); geo.computeVertexNormals();
 
-  const road = new THREE.Mesh(
-    geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95,metalness:.0})
-  );
-  road.receiveShadow=true;
-
+  const road = new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95}));
   const shoulder= new THREE.Mesh(geo.clone(), new THREE.MeshStandardMaterial({color:0x202734,roughness:1}));
   shoulder.scale.set(1.35,1,1.35);
   shoulder.position.y=-0.01;
@@ -122,14 +115,17 @@ function buildTrack(THREE){
   return {curve,road,shoulder,line,checkpoints,ROAD_HALF,lateralInfo};
 }
 
-/* ===== Jeu ===== */
+/* ===== Scène & rendu ===== */
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth,innerHeight);
 renderer.setPixelRatio(Math.min(2,devicePixelRatio||1));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0b0e14);
+scene.fog = new THREE.FogExp2(0x0b0e14, 0.0016);
 
 const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,2000);
 camera.position.set(0,6,12);
@@ -138,6 +134,11 @@ camera.position.set(0,6,12);
 scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.85));
 const sun=new THREE.DirectionalLight(0xffffff,.9);
 sun.position.set(40,60,30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 200;
+sun.shadow.camera.left = -40; sun.shadow.camera.right = 40;
+sun.shadow.camera.top = 40;  sun.shadow.camera.bottom = -40;
 scene.add(sun);
 
 // Sol
@@ -149,115 +150,79 @@ floor.rotation.x=-Math.PI/2; floor.position.y=-0.03; floor.receiveShadow=true; s
 
 // Piste
 const track=buildTrack(THREE);
+track.road.receiveShadow = true;
+track.shoulder.receiveShadow = true;
 scene.add(track.shoulder, track.road, track.line);
 
-// Physique
+/* ===== Physique ===== */
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
 world.solver.iterations = 12;
 
-// Plan très bas (sécurité)
+// filet de sécurité bas
 const ground = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
 ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
-ground.position.y = -2;               // plus bas que la route
+ground.position.y = -2;
 world.addBody(ground);
 
-/* --- Collider de route : ruban de boîtes alignées sur la courbe --- */
-const ROAD_THICKNESS = 0.2;
-const SEG_BODIES = 160;               // densité des segments (↑ = plus précis, ↓ = plus perf)
+// colliders route → ruban de boîtes
+const ROAD_THICKNESS = 0.22, SEG_BODIES = 160;
 for (let i = 0; i < SEG_BODIES; i++) {
-  const t0 = i / SEG_BODIES;
-  const t1 = (i+1) / SEG_BODIES;
-
-  const p0 = track.curve.getPointAt(t0);
-  const p1 = track.curve.getPointAt(t1);
+  const t0 = i / SEG_BODIES, t1 = (i+1) / SEG_BODIES;
+  const p0 = track.curve.getPointAt(t0), p1 = track.curve.getPointAt(t1);
   const mid = new CANNON.Vec3((p0.x+p1.x)/2, 0, (p0.z+p1.z)/2);
-
-  const dx = p1.x - p0.x;
-  const dz = p1.z - p0.z;
-  const segLen = Math.max(0.0001, Math.hypot(dx, dz));
-
-  // Boîte: demi-largeur = ROAD_HALF, demi-longueur = segLen/2, épaisseur faible
+  const dx = p1.x - p0.x, dz = p1.z - p0.z, segLen = Math.max(.0001, Math.hypot(dx,dz));
   const half = new CANNON.Vec3(track.ROAD_HALF, ROAD_THICKNESS/2, segLen/2);
-  const boxShape = new CANNON.Box(half);
-  const body = new CANNON.Body({ mass: 0, shape: boxShape });
+  const body = new CANNON.Body({ mass:0, shape:new CANNON.Box(half) });
   body.position.copy(mid);
-
-  // Yaw pour aligner la boîte avec la tangente de la piste
-  const yaw = Math.atan2(dx, dz); // X/Z → rotation autour Y
-  body.quaternion.setFromEuler(0, yaw, 0);
+  body.quaternion.setFromEuler(0, Math.atan2(dx,dz), 0);
   world.addBody(body);
 }
-
-/* --- Glissières invisibles (optionnel) pour éviter de tomber des bords --- */
-const RAIL_OFFSET = track.ROAD_HALF + 0.4;  // décalage latéral
-const RAIL_H = 0.8;                          // hauteur de la glissière
-const RAIL_T = 0.15;                         // épaisseur
+// glissières invisibles
+const RAIL_OFFSET = track.ROAD_HALF + 0.45, RAIL_H = 0.85, RAIL_T = 0.16;
 for (let i = 0; i < SEG_BODIES; i++) {
-  const t0 = i / SEG_BODIES;
-  const t1 = (i+1) / SEG_BODIES;
-  const p0 = track.curve.getPointAt(t0);
-  const p1 = track.curve.getPointAt(t1);
-  const dx = p1.x - p0.x, dz = p1.z - p0.z;
-  const segLen = Math.max(0.0001, Math.hypot(dx, dz));
-  const yaw = Math.atan2(dx, dz);
-
-  // vecteur normal (gauche)
-  const leftN = new THREE.Vector3(-dz, 0, dx).normalize();
-
-  // côté gauche
-  for (const side of [-1, +1]) {
-    const mid = new CANNON.Vec3(
-      (p0.x+p1.x)/2 + leftN.x * RAIL_OFFSET * side,
-      RAIL_H/2,
-      (p0.z+p1.z)/2 + leftN.z * RAIL_OFFSET * side
-    );
-    const railShape = new CANNON.Box(new CANNON.Vec3(RAIL_T/2, RAIL_H/2, segLen/2));
-    const rail = new CANNON.Body({ mass: 0, shape: railShape });
-    rail.position.copy(mid);
-    rail.quaternion.setFromEuler(0, yaw, 0);
-    world.addBody(rail);
+  const t0=i/SEG_BODIES, t1=(i+1)/SEG_BODIES;
+  const p0=track.curve.getPointAt(t0), p1=track.curve.getPointAt(t1);
+  const dx=p1.x-p0.x, dz=p1.z-p0.z, segLen=Math.max(.0001,Math.hypot(dx,dz));
+  const yaw=Math.atan2(dx,dz);
+  const leftN=new THREE.Vector3(-dz,0,dx).normalize();
+  for(const side of [-1,1]){
+    const mid=new CANNON.Vec3((p0.x+p1.x)/2 + leftN.x*RAIL_OFFSET*side, RAIL_H/2, (p0.z+p1.z)/2 + leftN.z*RAIL_OFFSET*side);
+    const rail=new CANNON.Body({ mass:0, shape:new CANNON.Box(new CANNON.Vec3(RAIL_T/2, RAIL_H/2, segLen/2)) });
+    rail.position.copy(mid); rail.quaternion.setFromEuler(0,yaw,0); world.addBody(rail);
   }
 }
 
+/* ===== “Moto” visuelle simple (stylisée) ===== */
+const moto = new THREE.Group();
+const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2,.5,2.0), new THREE.MeshStandardMaterial({color:0xf5f6f8,metalness:.1,roughness:.6}));
+frame.position.y=.35; frame.castShadow=true;
+const seat  = new THREE.Mesh(new THREE.BoxGeometry(.6,.14,.7), new THREE.MeshStandardMaterial({color:0x7cdfff}));
+seat.position.set(0,.55,-.15); seat.castShadow=true;
+const nose  = new THREE.Mesh(new THREE.BoxGeometry(.55,.14,.48), new THREE.MeshStandardMaterial({color:0xff8aa0}));
+nose.position.set(0,.55,.25); nose.castShadow=true;
+const wheelF= new THREE.Mesh(new THREE.TorusGeometry(.33,.06,12,24), new THREE.MeshStandardMaterial({color:0x222}));
+wheelF.rotation.x=Math.PI/2; wheelF.position.set(0,.35,.9); wheelF.castShadow=true;
+const wheelR= wheelF.clone(); wheelR.position.z=-.9; wheelR.scale.set(1.05,1.05,1.05);
+moto.add(frame,seat,nose,wheelF,wheelR);
+scene.add(moto);
 
-// Châssis “moto”
+/* ===== Véhicule physique (Raycast) ===== */
 const startP=track.curve.getPointAt(0);
-const chassisShape=new CANNON.Box(new CANNON.Vec3(.6,.3,1.0));
-const chassis=new CANNON.Body({mass:180,shape:chassisShape,position:new CANNON.Vec3(startP.x,.6,startP.z)});
+const chassis=new CANNON.Body({mass:180,shape:new CANNON.Box(new CANNON.Vec3(.6,.3,1.0)),position:new CANNON.Vec3(startP.x,.6,startP.z)});
 world.addBody(chassis);
 
-// Véhicule 2 roues
 const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
-const wopt={radius:.35, directionLocal:new CANNON.Vec3(0,-1,0),
-  suspensionRestLength:.26, suspensionStiffness:38, dampingRelaxation:2.3, dampingCompression:4.4,
-  frictionSlip:2.2, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.35,
-  customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
-};
-vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .9), radius:.33}); // avant
-vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.9), radius:.36}); // arrière
+const wopt={radius:.35, directionLocal:new CANNON.Vec3(0,-1,0), suspensionRestLength:.26, suspensionStiffness:38, dampingRelaxation:2.3, dampingCompression:4.4, frictionSlip:2.2, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.35, customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true};
+vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .9), radius:.33});
+vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.9), radius:.36});
 vehicle.addToWorld(world);
 
-// Moto visuelle
-const moto=new THREE.Group();
-const body=new THREE.Mesh(new THREE.BoxGeometry(1.2,.6,2.0), new THREE.MeshStandardMaterial({color:0xf5f6f8,metalness:.1,roughness:.6}));
-body.position.y=.35;
-const deco1=new THREE.Mesh(new THREE.BoxGeometry(.5,.15,.6), new THREE.MeshStandardMaterial({color:0x7cdfff}));
-deco1.position.set(0,.55,.1);
-const deco2=new THREE.Mesh(new THREE.BoxGeometry(.45,.15,.5), new THREE.MeshStandardMaterial({color:0xff8aa0}));
-deco2.position.set(0,.55,-.2);
-moto.add(body,deco1,deco2);
-const wFront=new THREE.Mesh(new THREE.TorusGeometry(.33,.06,12,24), new THREE.MeshStandardMaterial({color:0x222}));
-wFront.rotation.x=Math.PI/2; wFront.position.set(0,.35,.9);
-const wRear=wFront.clone(); wRear.position.set(0,.35,-.9); wRear.scale.set(1.05,1.05,1.05);
-moto.add(wFront,wRear); scene.add(moto);
-
-// Entrées
+/* ===== Entrées & HUD ===== */
 const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
 const keys={};
 addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyP'){input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none';}});
 addEventListener('keyup',e=>keys[e.code]=false);
 
-// Pads tactiles
 const padL=document.getElementById('padL'), stickL=document.getElementById('stickL');
 const padR=document.getElementById('padR'), stickR=document.getElementById('stickR');
 bindPad(padL,stickL,(dx,dy)=>{ input.steer = clamp(dx,-1,1); });
@@ -271,43 +236,38 @@ function bindPad(pad,stick,cb){
   pad.addEventListener('pointerdown',start); pad.addEventListener('pointermove',move); pad.addEventListener('pointerup',end); pad.addEventListener('pointercancel',end);
 }
 
-// HUD
 const spdEl=document.getElementById('spd'), lapEl=document.getElementById('lap'), timeEl=document.getElementById('time'), bestEl=document.getElementById('best');
 let laps=0, best=null, lapStart=performance.now(), nextCP=0;
-
-// Aides
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000);
-  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
+const fmt=ms=>{const m=Math.floor(ms/60000); ms-=m*60000; const s=Math.floor(ms/1000); const r=Math.floor(ms%1000); return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
 
-// Boucle
+/* ===== Boucle ===== */
 let last=performance.now();
 function tick(now){
   requestAnimationFrame(tick);
   const dt=Math.min(1/60,(now-last)/1000); last=now;
   if(input.paused){ renderer.render(scene,camera); return; }
 
-  // Clavier → input
+  // clavier → input
   const up=!!(keys['ArrowUp']||keys['KeyW']), dn=!!(keys['ArrowDown']||keys['KeyS']);
   const lf=!!(keys['ArrowLeft']||keys['KeyA']), rt=!!(keys['ArrowRight']||keys['KeyD']);
-  const hb=!!keys['Space'], nit=!!keys['KeyN'];
   input.throttle=Math.max(input.throttle, up?1:0);
-  input.brake=Math.max(input.brake, dn?1:0);
-  input.steer += ((lf?-1:0)+(rt?1:0) - input.steer)*0.2;
-  input.hand = hb; input.nitro = nit;
+  input.brake   =Math.max(input.brake,   dn?1:0);
+  input.steer  += ((lf?-1:0)+(rt?1:0) - input.steer)*0.2;
+  input.hand = !!keys['Space'];
+  input.nitro= !!keys['KeyN'];
 
-  // Paramètres “arcade”
+  // paramètres arcade
   const MAX_ENGINE = input.nitro ? 2600 : 1800;
   const MAX_STEER  = 0.46;
   const BRAKE = 48, H_BRAKE = 85;
 
-  // Adhérence selon piste
-  const pos = chassis.position;
-  const {lat}=track.lateralInfo(pos.x,pos.z);
+  // grip selon si on est sur la route
+  const {lat}=track.lateralInfo(chassis.position.x, chassis.position.z);
   const onTrack = Math.abs(lat)<=track.ROAD_HALF*1.08;
   const grip = onTrack?1:0.55;
 
-  // Drive
+  // drive
   vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip, 0);
   vehicle.setSteeringValue(0,1);
   vehicle.applyEngineForce(-(input.throttle*MAX_ENGINE)*(onTrack?1:0.55), 1);
@@ -315,24 +275,28 @@ function tick(now){
   const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
   vehicle.setBrake(brake,0); vehicle.setBrake(brake,1);
 
-  // Physique
+  // physique
   world.step(1/60,dt);
 
-  // Visuel moto
+  // “moto” suit la physique
   moto.position.copy(chassis.position);
   moto.quaternion.copy(chassis.quaternion);
 
-  // Caméra chase
+  // petit roulis visuel quand on tourne
+  const speed = chassis.velocity.length();
+  moto.rotation.z = THREE.MathUtils.lerp(moto.rotation.z, -input.steer*0.25*Math.min(1, speed/20), 0.15);
+
+  // caméra chase
   const fwd=new THREE.Vector3(0,0,1).applyQuaternion(moto.quaternion);
   const upv=new THREE.Vector3(0,1,0);
   const look = moto.position.clone().add(fwd.clone().multiplyScalar(4)).add(upv.clone().multiplyScalar(1.6));
   const cam  = moto.position.clone().add(fwd.clone().multiplyScalar(-10)).add(upv.clone().multiplyScalar(3.8));
-  camera.position.lerp(cam, .12); camera.lookAt(look);
+  camera.position.lerp(cam,.12); camera.lookAt(look);
 
-  // Tours / checkpoints
+  // tours
   const cp=track.checkpoints[nextCP];
   if(cp){
-    const v=new THREE.Vector3(pos.x-cp.p.x,0,pos.z-cp.p.z);
+    const v=new THREE.Vector3(chassis.position.x-cp.p.x,0,chassis.position.z-cp.p.z);
     const pass= v.length()<track.ROAD_HALF*1.18 && Math.abs(v.dot(cp.n))<track.ROAD_HALF*.9;
     if(pass){ nextCP++; if(nextCP>=track.checkpoints.length){ nextCP=0; laps++; const t=now-lapStart; if(!best||t<best) best=t; lapStart=now; } }
   }
@@ -347,7 +311,7 @@ function tick(now){
 }
 requestAnimationFrame(tick);
 
-// Resize
+// resize
 addEventListener('resize',()=>{
   renderer.setSize(innerWidth,innerHeight);
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
