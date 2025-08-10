@@ -274,7 +274,7 @@
   let deadTimer = 0;
 
   /* ---------- loop ---------- */
-  let last=performance.now(), startT=performance.now();
+  let last=performance.now() ;
   function tick(now){
     requestAnimationFrame(tick);
     const dt=Math.min(1/60,(now-last)/1000); last=now;
