@@ -152,24 +152,71 @@ const track=buildTrack(THREE);
 scene.add(track.shoulder, track.road, track.line);
 
 // Physique
-const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
-world.solver.iterations=12;
-const ground=new CANNON.Body({mass:0,shape:new CANNON.Plane()});
-ground.quaternion.setFromEuler(-Math.PI/2,0,0);
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
+world.solver.iterations = 12;
+
+// Plan très bas (sécurité)
+const ground = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+ground.position.y = -2;               // plus bas que la route
 world.addBody(ground);
 
-// Châssis “moto”
-const startP=track.curve.getPointAt(0);
-const chassisShape=new CANNON.Box(new CANNON.Vec3(.6,.3,1.0));
-const chassis=new CANNON.Body({mass:180,shape:chassisShape,position:new CANNON.Vec3(startP.x,.6,startP.z)});
-world.addBody(chassis);
+/* --- Collider de route : ruban de boîtes alignées sur la courbe --- */
+const ROAD_THICKNESS = 0.2;
+const SEG_BODIES = 160;               // densité des segments (↑ = plus précis, ↓ = plus perf)
+for (let i = 0; i < SEG_BODIES; i++) {
+  const t0 = i / SEG_BODIES;
+  const t1 = (i+1) / SEG_BODIES;
 
-// Véhicule 2 roues
-const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
-const wopt={radius:.35, directionLocal:new CANNON.Vec3(0,-1,0),
-  suspensionRestLength:.26, suspensionStiffness:38, dampingRelaxation:2.3, dampingCompression:4.4,
-  frictionSlip:2.2, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.35,
-  customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
+  const p0 = track.curve.getPointAt(t0);
+  const p1 = track.curve.getPointAt(t1);
+  const mid = new CANNON.Vec3((p0.x+p1.x)/2, 0, (p0.z+p1.z)/2);
+
+  const dx = p1.x - p0.x;
+  const dz = p1.z - p0.z;
+  const segLen = Math.max(0.0001, Math.hypot(dx, dz));
+
+  // Boîte: demi-largeur = ROAD_HALF, demi-longueur = segLen/2, épaisseur faible
+  const half = new CANNON.Vec3(track.ROAD_HALF, ROAD_THICKNESS/2, segLen/2);
+  const boxShape = new CANNON.Box(half);
+  const body = new CANNON.Body({ mass: 0, shape: boxShape });
+  body.position.copy(mid);
+
+  // Yaw pour aligner la boîte avec la tangente de la piste
+  const yaw = Math.atan2(dx, dz); // X/Z → rotation autour Y
+  body.quaternion.setFromEuler(0, yaw, 0);
+  world.addBody(body);
+}
+
+/* --- Glissières invisibles (optionnel) pour éviter de tomber des bords --- */
+const RAIL_OFFSET = track.ROAD_HALF + 0.4;  // décalage latéral
+const RAIL_H = 0.8;                          // hauteur de la glissière
+const RAIL_T = 0.15;                         // épaisseur
+for (let i = 0; i < SEG_BODIES; i++) {
+  const t0 = i / SEG_BODIES;
+  const t1 = (i+1) / SEG_BODIES;
+  const p0 = track.curve.getPointAt(t0);
+  const p1 = track.curve.getPointAt(t1);
+  const dx = p1.x - p0.x, dz = p1.z - p0.z;
+  const segLen = Math.max(0.0001, Math.hypot(dx, dz));
+  const yaw = Math.atan2(dx, dz);
+
+  // vecteur normal (gauche)
+  const leftN = new THREE.Vector3(-dz, 0, dx).normalize();
+
+  // côté gauche
+  for (const side of [-1, +1]) {
+    const mid = new CANNON.Vec3(
+      (p0.x+p1.x)/2 + leftN.x * RAIL_OFFSET * side,
+      RAIL_H/2,
+      (p0.z+p1.z)/2 + leftN.z * RAIL_OFFSET * side
+    );
+    const railShape = new CANNON.Box(new CANNON.Vec3(RAIL_T/2, RAIL_H/2, segLen/2));
+    const rail = new CANNON.Body({ mass: 0, shape: railShape });
+    rail.position.copy(mid);
+    rail.quaternion.setFromEuler(0, yaw, 0);
+    world.addBody(rail);
+  }
 };
 vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .9), radius:.33}); // avant
 vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.9), radius:.36}); // arrière
