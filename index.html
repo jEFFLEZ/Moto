@@ -160,7 +160,7 @@
     chassis.angularFactor.set(0,1,0);      // bloque roulis/tangage
     chassis.angularDamping=0.35;
     world.addBody(chassis);
-
+    chassis.position.set(p.x, 0.95, p.z); // avant 1.1 ou 0.9 → ajuste par pas de 0.05
     const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
     const wopt={
       radius:0.42,
@@ -214,12 +214,27 @@
     root.add(bumperF, bumperR);
 
     // roues cylindres low-poly (12 côtés)
+    
     const wheelGeo = new THREE.CylinderGeometry(0.42,0.42,0.3,12,1,true);
     wheelGeo.rotateZ(Math.PI/2);
     function wheel(x,z){
       const w = new THREE.Mesh(wheelGeo, darkMat);
       w.position.set(x,0.42,z);
       root.add(w);
+      const wopt = {
+  radius: 0.42,                 // ↑ avant ~0.34 → 0.42
+  suspensionRestLength: 0.38,   // ↑ avant ~0.28 → 0.38
+  suspensionStiffness: 42,
+  dampingRelaxation: 2.4,
+  dampingCompression: 4.6,
+  frictionSlip: 2.3,
+  directionLocal: new CANNON.Vec3(0,-1,0),
+  axleLocal: new CANNON.Vec3(1,0,0),
+  maxSuspensionTravel: 0.42,
+  maxSuspensionForce: 1e4,
+  useCustomSlidingRotationalSpeed: true,
+  customSlidingRotationalSpeed: -30
+};
       return w;
     }
     const wFL=wheel(-1.05,  1.4),
@@ -358,12 +373,35 @@
     player.vehicle.applyEngineForce(-engine,3);
 
     // freinage
+    for (let i=0;i<4;i++) vehicle.setBrake(0, i);    // important AVANT le moteur
+const engine = input.throttle * 2000;            // ou 2800 avec nitro
+vehicle.applyEngineForce(-engine, 2);
+vehicle.applyEngineForce(-engine, 3);
     const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
     for(let i=0;i<4;i++) player.vehicle.setBrake(brake,i);
 
     world.step(1/60,dt);
 playerDebug.update();
     // visuel + HUD + cam
+    // dans ta boucle après world.step(...):
+for (let i = 0; i < 4; i++) {
+  const wi = player.vehicle.wheelInfos[i];
+  const hit = wi.raycastResult?.isInContact;
+  debugSpheres[i].material.color.set(hit ? 0x4caf50 : 0xff4d5a);
+
+  // option: montre le point de contact exact
+  if (hit) {
+    debugSpheres[i].position.set(
+      wi.raycastResult.hitPointWorld.x,
+      wi.raycastResult.hitPointWorld.y + 0.02,
+      wi.raycastResult.hitPointWorld.z
+    );
+  } else {
+    // sinon place la sphère au “bas” de la roue
+    const wp = wi.worldTransform.position;
+    debugSpheres[i].position.set(wp.x, wp.y - wi.radius - wi.suspensionLength, wp.z);
+  }
+}
     carMesh.position.copy(player.chassis.position);
     carMesh.quaternion.copy(player.chassis.quaternion);
     chase(carMesh);
