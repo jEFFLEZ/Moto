@@ -307,16 +307,23 @@
       const {lat}=track.lateralInfo(pos.x,pos.z);
       const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
       const grip=onTrack?1:0.6;
+window.applyPlayerDrive = function(MAX_ENGINE, MAX_STEER, BRAKE, onTrack, grip) {
+  player.vehicle.setSteeringValue(clamp(input.steer, -1, 1) * MAX_STEER * grip, 0);
+  player.vehicle.setSteeringValue(0, 1);
 
-      player.vehicle.setSteeringValue(clamp(input.steer,-1,1)*MAX_STEER*grip, 0);
-      player.vehicle.setSteeringValue(0,1);
+  player.vehicle.setBrake(0, 0);
+  player.vehicle.setBrake(0, 1);
 
-      const engine = (input.throttle*MAX_ENGINE) * (onTrack?1:0.6);
-      player.vehicle.applyEngineForce(engine, 1); // roue arrière (1)
-      player.vehicle.applyEngineForce(0, 0);
+  const engine = (input.throttle * MAX_ENGINE) * (onTrack ? 1 : 0.6);
+  console.log("Throttle:", input.throttle, "Engine force:", engine);
 
-      const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
-      player.vehicle.setBrake(brake,0); player.vehicle.setBrake(brake,1);
+  player.vehicle.applyEngineForce(1 * engine, 1); // Try forcing sign to 1
+  player.vehicle.applyEngineForce(0, 0);
+
+  const br = (input.brake ? BRAKE : 0) + (input.hand ? 90 : 0);
+  player.vehicle.setBrake(br, 0);
+  player.vehicle.setBrake(br, 1);
+    };
     }
 
     // Bots
