@@ -147,24 +147,31 @@
     const tan=track.curve.getTangentAt(startT);
     const yaw=Math.atan2(tan.x,tan.z);
 
-    const chassis=new CANNON.Body({
-      mass:170,
-      shape:new CANNON.Box(new CANNON.Vec3(.6,.32,1.05)),
-      position:new CANNON.Vec3(p.x, .9, p.z)
-    });
-    chassis.quaternion.setFromEuler(0, yaw, 0, "XYZ");
-    world.addBody(chassis);
+    // 1) châssis plus bas
+const chassis = new CANNON.Body({
+  mass: 170,
+  shape: new CANNON.Box(new CANNON.Vec3(0.6, 0.32, 1.05)),
+  position: new CANNON.Vec3(p.x, 0.58, p.z) // <-- au lieu de 0.9
+});
 
-    const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
+// 2) roues/suspensions un poil plus longues
+const R_FRONT = 0.40;   // 0.34 -> 0.40
+const R_REAR  = 0.42;   // 0.36 -> 0.42
 
-    const TRACK=0.36, WB=1.90, R_FRONT=.34, R_REAR=.36;
-    const wopt={
-      radius:R_FRONT, directionLocal:new CANNON.Vec3(0,-1,0),
-      suspensionRestLength:.28, suspensionStiffness:42, dampingRelaxation:2.4, dampingCompression:4.6,
-      frictionSlip:2.3, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.36,
-      customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
-    };
-
+const wopt = {
+  radius: R_FRONT,
+  directionLocal: new CANNON.Vec3(0, -1, 0),
+  suspensionRestLength: 0.33,         // 0.28 -> 0.33
+  suspensionStiffness: 42,
+  dampingRelaxation: 2.4,
+  dampingCompression: 4.6,
+  frictionSlip: 2.3,
+  axleLocal: new CANNON.Vec3(1, 0, 0),
+  maxSuspensionForce: 1e4,
+  maxSuspensionTravel: 0.42,          // 0.36 -> 0.42
+  customSlidingRotationalSpeed: -30,
+  useCustomSlidingRotationalSpeed: true
+};
     // Avant (0,1)
     vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK/2,0, WB/2), radius:R_FRONT});
     vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK/2,0, WB/2), radius:R_FRONT});
