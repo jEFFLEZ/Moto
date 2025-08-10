@@ -42,6 +42,77 @@
   <script type="module">
   import * as THREE from "three";
   import * as CANNON from "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js";
+function makeVehicle(startT){
+  // Point & heading on the track
+  const p   = track.curve.getPointAt(startT);
+  const tan = track.curve.getTangentAt(startT);
+  const yaw = Math.atan2(tan.x, tan.z);
+
+  // Chassis body
+  const chassis = new CANNON.Body({
+    mass: 170,
+    shape: new CANNON.Box(new CANNON.Vec3(0.6, 0.32, 1.05)),
+    position: new CANNON.Vec3(p.x, 0.9, p.z)
+  });
+  chassis.quaternion.setFromEuler(0, yaw, 0, "XYZ");
+  world.addBody(chassis);
+
+  // Raycast vehicle
+  const vehicle = new CANNON.RaycastVehicle({ chassisBody: chassis });
+
+  // --- "Moto stable" = 4 roues très proches ---
+  const TRACK = 0.36;   // écart latéral faible
+  const WB    = 1.90;   // empattement
+  const R_FRONT = 0.34;
+  const R_REAR  = 0.36;
+
+  const wopt = {
+    radius: R_FRONT,
+    directionLocal: new CANNON.Vec3(0, -1, 0),
+    suspensionRestLength: 0.28,
+    suspensionStiffness: 42,
+    dampingRelaxation: 2.4,
+    dampingCompression: 4.6,
+    frictionSlip: 2.3,
+    axleLocal: new CANNON.Vec3(1, 0, 0),
+    maxSuspensionForce: 1e4,
+    maxSuspensionTravel: 0.36,
+    customSlidingRotationalSpeed: -30,
+    useCustomSlidingRotationalSpeed: true
+  };
+
+  // Avant (indices 0 et 1) -> direction
+  vehicle.addWheel({
+    ...wopt,
+    chassisConnectionPointLocal: new CANNON.Vec3(-TRACK/2, 0,  WB/2),
+    radius: R_FRONT
+  });
+  vehicle.addWheel({
+    ...wopt,
+    chassisConnectionPointLocal: new CANNON.Vec3( TRACK/2, 0,  WB/2),
+    radius: R_FRONT
+  });
+
+  // Arrière (indices 2 et 3) -> motrices
+  vehicle.addWheel({
+    ...wopt,
+    chassisConnectionPointLocal: new CANNON.Vec3(-TRACK/2, 0, -WB/2),
+    radius: R_REAR
+  });
+  vehicle.addWheel({
+    ...wopt,
+    chassisConnectionPointLocal: new CANNON.Vec3( TRACK/2, 0, -WB/2),
+    radius: R_REAR
+  });
+
+  vehicle.addToWorld(world);
+
+  // Anti-bascule
+  chassis.angularFactor.set(0, 1, 0);
+  chassis.angularDamping = 0.3;
+
+  return { chassis, vehicle };
+}
 
   // ---------- utils ----------
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -306,6 +377,21 @@ chassis.angularDamping = 0.3;          // adoucit les rotations parasites
   let last=performance.now(), startT=performance.now();
   function tick(now){
     requestAnimationFrame(tick);
+    // Steering on front wheels (0,1)
+const steerVal = clamp(input.steer, -1, 1) * MAX_STEER * grip;
+player.vehicle.setSteeringValue(steerVal, 0);
+player.vehicle.setSteeringValue(steerVal, 1);
+
+// Engine on rear wheels (2,3)
+const engine = (input.throttle * MAX_ENGINE) * (onTrack ? 1 : 0.6);
+// NOTE: RaycastVehicle uses negative force for forward in this setup
+player.vehicle.applyEngineForce(-engine, 2);
+player.vehicle.applyEngineForce(-engine, 3);
+
+// Brakes on all wheels
+const brake = (input.brake ? BRAKE : 0) + (input.hand ? H_BRAKE : 0);
+for (let i = 0; i < 4; i++) player.vehicle.setBrake(brake, i);
+
     const dt=Math.min(1/60,(now-last)/1000); last=now;
     if(input.paused){ renderer.render(scene,camera); return; }
 
