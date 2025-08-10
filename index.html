@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Moto 3D – Flat track</title>
+<title>Car 3D – Flat track</title>
 <link rel="icon" href="data:,">
 <style>
   :root{--bg:#0b0e14;--hud:rgba(0,0,0,.35);--lime:#9be870}
@@ -13,7 +13,6 @@
   #hud b{color:var(--lime)}
   #tips{position:fixed;right:12px;top:12px;opacity:.85}
   #pause{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);font-size:28px;padding:14px 18px;background:rgba(0,0,0,.55);border-radius:12px;display:none}
-  /* Pads mobile */
   .pad{position:fixed;bottom:22px;width:42vw;max-width:320px;height:42vw;max-height:320px;border:2px solid rgba(255,255,255,.28);border-radius:50%;opacity:.28;touch-action:none}
   #padL{left:22px} #padR{right:22px}
   .stick{position:absolute;left:50%;top:50%;width:30%;height:30%;transform:translate(-50%,-50%);border:2px solid rgba(255,255,255,.6);border-radius:50%}
@@ -47,7 +46,7 @@
     return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(r).padStart(3,'0')}`;};
 
   /* ---------- renderer & scene ---------- */
-  const renderer=new THREE.WebGLRenderer({antialias:true});
+  const renderer=new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
   renderer.setSize(innerWidth,innerHeight);
   renderer.setPixelRatio(Math.min(2, devicePixelRatio||1));
   renderer.domElement.tabIndex=0;
@@ -59,25 +58,26 @@
   const camera=new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 3000);
   camera.position.set(0,6,12);
 
-  scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.85));
-  const sun=new THREE.DirectionalLight(0xffffff,.9); sun.position.set(40,60,30); scene.add(sun);
+  // Éclairage très léger (moins d’ombre/coût)
+  scene.add(new THREE.HemisphereLight(0xbcd4ff,0x091018,.9));
+  const sun=new THREE.DirectionalLight(0xffffff,.45); sun.position.set(40,60,30); scene.add(sun);
 
   const floor=new THREE.Mesh(
-    new THREE.PlaneGeometry(4000,4000),
+    new THREE.PlaneGeometry(4000,4000,1,1),
     new THREE.MeshStandardMaterial({color:0x0e141b,roughness:1})
   );
-  floor.rotation.x=-Math.PI/2; floor.position.y=-2; floor.receiveShadow=true; scene.add(floor);
+  floor.rotation.x=-Math.PI/2; floor.position.y=-2; floor.receiveShadow=false; scene.add(floor);
 
   /* ---------- flat oval track ---------- */
   function buildTrack(){
-    const pts=[], segs=700, RX=220, RZ=140;
+    const pts=[], segs=500, RX=220, RZ=140;
     for(let i=0;i<segs;i++){
       const t=i/segs*2*Math.PI;
       pts.push(new THREE.Vector3(Math.cos(t)*RX, 0, Math.sin(t)*RZ));
     }
     const curve=new THREE.CatmullRomCurve3(pts,true,"catmullrom",0.5);
 
-    const ROAD_HALF=6.8, n=900;
+    const ROAD_HALF=6.6, n=650;
     const positions=[], uvs=[], indices=[];
     for(let i=0;i<n;i++){
       const t=i/(n-1), p=curve.getPointAt(t);
@@ -86,7 +86,7 @@
       const a=p.clone().addScaledVector(left,-ROAD_HALF);
       const b=p.clone().addScaledVector(left, ROAD_HALF);
       positions.push(a.x,a.y,a.z, b.x,b.y,b.z);
-      uvs.push(0,t*45, 1,t*45);
+      uvs.push(0,t*36, 1,t*36);
       if(i<n-1){ const base=i*2; indices.push(base,base+1,base+2, base+1,base+3,base+2); }
     }
     const geo=new THREE.BufferGeometry();
@@ -94,13 +94,14 @@
     geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
     geo.setIndex(indices); geo.computeVertexNormals();
 
-    const road=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.95}));
+    const road=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x3a475a,roughness:.98}));
     const shoulder=new THREE.Mesh(geo.clone(),new THREE.MeshStandardMaterial({color:0x202734,roughness:1}));
-    shoulder.scale.set(1.35,1,1.35); shoulder.position.y=-0.02;
+    shoulder.scale.set(1.32,1,1.32); shoulder.position.y=-0.02;
 
-    const line=new THREE.Group(), dashGeo=new THREE.BoxGeometry(.28,.03,1.6), dashMat=new THREE.MeshStandardMaterial({color:0xbfd2ff});
-    for(let i=0;i<280;i++){
-      const t=i/280,p=curve.getPointAt(t),tan=curve.getTangentAt(t);
+    // pointillés très low-cost
+    const line=new THREE.Group(), dashGeo=new THREE.BoxGeometry(.26,.02,1.6), dashMat=new THREE.MeshBasicMaterial({color:0xbfd2ff});
+    for(let i=0;i<200;i++){
+      const t=i/200,p=curve.getPointAt(t),tan=curve.getTangentAt(t);
       const m=new THREE.Mesh(dashGeo,dashMat);
       m.position.copy(p).add(new THREE.Vector3(0,0.02,0));
       m.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), new THREE.Vector3(tan.x,0,tan.z).normalize());
@@ -110,7 +111,7 @@
     function lateralInfo(x,z){
       const P=new THREE.Vector3(x,0,z);
       let bestD=Infinity,bp=null,bn=null;
-      const steps=256;
+      const steps=192;
       for(let i=0;i<=steps;i++){
         const t=i/steps,p=curve.getPointAt(t);
         const d=P.distanceToSquared(p);
@@ -128,10 +129,10 @@
 
   /* ---------- physics ---------- */
   const world=new CANNON.World({gravity:new CANNON.Vec3(0,-9.82,0)});
-  world.solver.iterations=12;
+  world.solver.iterations=10;
 
-  // ribbon of boxes (floor collider)
-  const SEG_BODIES=180, THICK=0.25;
+  // ruban de boxes (collider piste)
+  const SEG_BODIES=140, THICK=0.25;
   for(let i=0;i<SEG_BODIES;i++){
     const t0=i/SEG_BODIES, t1=(i+1)/SEG_BODIES;
     const p0=track.curve.getPointAt(t0), p1=track.curve.getPointAt(t1);
@@ -144,68 +145,101 @@
     world.addBody(body);
   }
 
-  /* ---------- vehicle (fake motorbike = 4 close wheels) ---------- */
-  function makeVehicle(startT){
+  /* ---------- voiture : physique ---------- */
+  function makeCarVehicle(startT){
     const p=track.curve.getPointAt(startT);
     const tan=track.curve.getTangentAt(startT);
     const yaw=Math.atan2(tan.x,tan.z);
 
     const chassis=new CANNON.Body({
-      mass:170,
-      shape:new CANNON.Box(new CANNON.Vec3(.6,.32,1.05)),
-      position:new CANNON.Vec3(p.x, .9, p.z)
+      mass: 520,
+      shape:new CANNON.Box(new CANNON.Vec3(1.0,0.35,1.9)),
+      position:new CANNON.Vec3(p.x, 1.0, p.z)
     });
-    chassis.quaternion.setFromEuler(0, yaw, 0, "XYZ");
+    chassis.quaternion.setFromEuler(0,yaw,0,"XYZ");
+    chassis.angularFactor.set(0,1,0);      // bloque roulis/tangage
+    chassis.angularDamping=0.35;
     world.addBody(chassis);
 
     const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
-    const TRACK=0.36, WB=1.90, R_FRONT=.34, R_REAR=.36;
     const wopt={
-      radius:R_FRONT,
+      radius:0.42,
       directionLocal:new CANNON.Vec3(0,-1,0),
-      suspensionRestLength:.28, suspensionStiffness:42,
+      suspensionRestLength:0.28, suspensionStiffness:42,
       dampingRelaxation:2.4, dampingCompression:4.6,
-      frictionSlip:2.3, axleLocal:new CANNON.Vec3(1,0,0),
-      maxSuspensionForce:1e4, maxSuspensionTravel:.36,
+      frictionSlip:3.1, axleLocal:new CANNON.Vec3(1,0,0),
+      maxSuspensionForce:1e4, maxSuspensionTravel:0.32,
       customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
     };
-    // front steer (0,1)
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK/2,0, WB/2), radius:R_FRONT});
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK/2,0, WB/2), radius:R_FRONT});
-    // rear drive (2,3)
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK/2,0,-WB/2), radius:R_REAR});
-    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK/2,0,-WB/2), radius:R_REAR});
+
+    const TRACK=1.05, WB=2.8; // voie / empattement
+    // avant (direction)
+    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK,0, WB/2)});
+    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK,0, WB/2)});
+    // arrière (moteur)
+    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(-TRACK,0,-WB/2)});
+    vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3( TRACK,0,-WB/2)});
     vehicle.addToWorld(world);
 
-    chassis.angularFactor.set(0,1,0);  // lock roll/pitch
-    chassis.angularDamping=0.3;
-
-    return {chassis,vehicle};
+    return {chassis,vehicle,TRACK,WB};
   }
 
-  function makeMotoMesh(color=0x4caf50){
+  /* ---------- voiture : mesh cartoon low‑poly ---------- */
+  function makeCarMesh(color=0xff4d4d){
     const root=new THREE.Group();
-    const main=new THREE.MeshStandardMaterial({color,metalness:.05,roughness:.6});
-    const dark=new THREE.MeshStandardMaterial({color:0x222,metalness:.1,roughness:.8});
-    const light=new THREE.MeshStandardMaterial({color:0xf5f6f8,metalness:.05,roughness:.5});
-    const frame=new THREE.Mesh(new THREE.BoxGeometry(1.3,.38,2.1), light); frame.position.y=.4;
-    const seat =new THREE.Mesh(new THREE.BoxGeometry(1.0,.18,1.0), main); seat.position.set(0,.62,-.1);
-    const hood =new THREE.Mesh(new THREE.BoxGeometry(.8,.22,.7),  main); hood.position.set(0,.58,.6);
-    const wG=new THREE.TorusGeometry(.36,.08,10,20), wM=dark;
-    const wF=new THREE.Mesh(wG,wM); wF.rotation.x=Math.PI/2; wF.position.set(0,.38,.95);
-    const wR=wF.clone(); wR.position.z=-.95; wR.scale.set(1.03,1.03,1.03);
-    const bar=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.65,8), light); bar.rotation.z=Math.PI/2; bar.position.set(0,.92,.45);
-    const plate=new THREE.Mesh(new THREE.BoxGeometry(.52,.42,.08), light); plate.position.set(0,.85,.85);
-    const fender=new THREE.Mesh(new THREE.BoxGeometry(.9,.08,.5), main); fender.position.set(0,.52,.95);
-    const tail=new THREE.Mesh(new THREE.BoxGeometry(.9,.06,.5), main); tail.position.set(0,.52,-.95);
-    root.add(frame,seat,hood,wF,wR,bar,plate,fender,tail);
-    root.position.y=0.2;
+
+    const bodyMat  = new THREE.MeshStandardMaterial({color, metalness:.05, roughness:.7});
+    const darkMat  = new THREE.MeshStandardMaterial({color:0x202020, metalness:.1, roughness:.9});
+    const lightMat = new THREE.MeshStandardMaterial({color:0xf4f6f8, metalness:.05, roughness:.6});
+    const glassMat = new THREE.MeshStandardMaterial({color:0x9ed3ff, metalness:.05, roughness:.1, transparent:true, opacity:.8});
+
+    // châssis (bloc) – très peu de segments
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.2,0.6,4.0,1,1,1), bodyMat);
+    body.position.y = 0.55;
+    root.add(body);
+
+    // “capot” & “coffre” en petites rampes
+    const hood  = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.18,1.2,1,1,1), lightMat); hood.position.set(0,0.88, 1.0);
+    const trunk = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.16,1.1,1,1,1), lightMat); trunk.position.set(0,0.82,-1.25);
+    root.add(hood,trunk);
+
+    // cabine vitrée
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.7,1.6,1,1,1), glassMat);
+    cabin.position.set(0,1.05, -0.2);
+    root.add(cabin);
+
+    // pare‑chocs simples
+    const bumperF = new THREE.Mesh(new THREE.BoxGeometry(2.1,0.22,0.25,1,1,1), darkMat); bumperF.position.set(0,0.48, 2.05);
+    const bumperR = new THREE.Mesh(new THREE.BoxGeometry(2.1,0.22,0.25,1,1,1), darkMat); bumperR.position.set(0,0.48,-2.05);
+    root.add(bumperF, bumperR);
+
+    // roues cylindres low-poly (12 côtés)
+    const wheelGeo = new THREE.CylinderGeometry(0.42,0.42,0.3,12,1,true);
+    wheelGeo.rotateZ(Math.PI/2);
+    function wheel(x,z){
+      const w = new THREE.Mesh(wheelGeo, darkMat);
+      w.position.set(x,0.42,z);
+      root.add(w);
+      return w;
+    }
+    const wFL=wheel(-1.05,  1.4),
+          wFR=wheel( 1.05,  1.4),
+          wRL=wheel(-1.05, -1.4),
+          wRR=wheel( 1.05, -1.4);
+
+    // on garde des refs si tu veux animer visuellement plus tard
+    root.userData.wheels=[wFL,wFR,wRL,wRR];
+
+    // centre un poil plus bas pour le look “posé”
+    root.position.y=0.1;
+
     return root;
   }
 
   /* ---------- player ---------- */
-  const player = makeVehicle(0.02);
-  const motoPlayer = makeMotoMesh(0x4caf50); scene.add(motoPlayer);
+  const player = makeCarVehicle(0.02);
+  const carMesh = makeCarMesh(0xff4d4d);
+  scene.add(carMesh);
 
   /* ---------- input ---------- */
   const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
@@ -220,7 +254,7 @@
   renderer.domElement.addEventListener('click',()=>renderer.domElement.focus());
   renderer.domElement.focus();
 
-  // pads
+  // pads tactiles
   function bindPad(pad,stick,cb){
     let act=false,id=null,cx=0,cy=0,r=0;
     const rect=()=>pad.getBoundingClientRect();
@@ -244,14 +278,14 @@
 
   function resetOnTrack(body){
     const p=body.position; let bestD=Infinity,bestT=0;
-    const STEPS=360;
+    const STEPS=300;
     for(let i=0;i<=STEPS;i++){
       const t=i/STEPS, c=track.curve.getPointAt(t);
       const d=(c.x-p.x)**2 + (c.z-p.z)**2; if(d<bestD){bestD=d; bestT=t;}
     }
     const c=track.curve.getPointAt(bestT), tan=track.curve.getTangentAt(bestT);
     const yaw=Math.atan2(tan.x,tan.z);
-    body.position.set(c.x, .9, c.z);
+    body.position.set(c.x, .95, c.z);
     body.velocity.set(0,0,0); body.angularVelocity.set(0,0,0);
     body.quaternion.setFromEuler(0,yaw,0,'XYZ');
   }
@@ -259,11 +293,11 @@
   /* ---------- HUD + camera ---------- */
   const spdEl=document.getElementById('spd'), timeEl=document.getElementById('time');
   const startTime=performance.now();
-  function chase(mesh){
-    const fwd=new THREE.Vector3(0,0,1).applyQuaternion(mesh.quaternion);
+  function chase(target){
+    const fwd=new THREE.Vector3(0,0,1).applyQuaternion(target.quaternion);
     const up =new THREE.Vector3(0,1,0);
-    const look=mesh.position.clone().add(fwd.clone().multiplyScalar(4)).add(up.clone().multiplyScalar(1.6));
-    const pos =mesh.position.clone().add(fwd.clone().multiplyScalar(-10)).add(up.clone().multiplyScalar(3.8));
+    const look=target.position.clone().add(fwd.clone().multiplyScalar(5)).add(up.clone().multiplyScalar(1.8));
+    const pos =target.position.clone().add(fwd.clone().multiplyScalar(-10)).add(up.clone().multiplyScalar(3.6));
     camera.position.lerp(pos,.12); camera.lookAt(look);
   }
 
@@ -284,9 +318,9 @@
     input.hand = !!keys['Space'];
     input.nitro = !!keys['KeyN'];
 
-    const MAX_ENGINE = input.nitro ? 2800 : 2000;
-    const MAX_STEER  = 0.52;
-    const BRAKE      = 52, H_BRAKE = 90;
+    const MAX_ENGINE = input.nitro ? 2600 : 1900;
+    const MAX_STEER  = 0.48;
+    const BRAKE      = 54, H_BRAKE = 90;
 
     // grip/adhérence
     const pos=player.chassis.position;
@@ -294,24 +328,26 @@
     const onTrack=Math.abs(lat)<=track.ROAD_HALF*1.05;
     const grip=onTrack?1:0.6;
 
-    // steer avant (0,1)
+    // direction (0,1 avant)
     const steerVal=clamp(input.steer,-1,1)*MAX_STEER*grip;
     player.vehicle.setSteeringValue(steerVal,0);
     player.vehicle.setSteeringValue(steerVal,1);
-    // moteur arrière (2,3) — NEGATIVE force = forward ici
-    const engine=(input.throttle*MAX_ENGINE)*(onTrack?1:0.6);
+
+    // moteur arrière (2,3) — NEGATIVE = forward ici
+    const engine=(input.throttle*MAX_ENGINE)*(onTrack?1:0.65);
     player.vehicle.applyEngineForce(-engine,2);
     player.vehicle.applyEngineForce(-engine,3);
-    // frein sur tout
+
+    // freinage
     const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
     for(let i=0;i<4;i++) player.vehicle.setBrake(brake,i);
 
     world.step(1/60,dt);
 
     // visuel + HUD + cam
-    motoPlayer.position.copy(player.chassis.position);
-    motoPlayer.quaternion.copy(player.chassis.quaternion);
-    chase(motoPlayer);
+    carMesh.position.copy(player.chassis.position);
+    carMesh.quaternion.copy(player.chassis.quaternion);
+    chase(carMesh);
     spdEl.textContent=Math.round(player.chassis.velocity.length()*3.6);
     timeEl.textContent=fmt(now-startTime);
 
