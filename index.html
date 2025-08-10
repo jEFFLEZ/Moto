@@ -148,7 +148,7 @@
     const chassis=new CANNON.Body({
       mass: 520,
       shape:new CANNON.Box(new CANNON.Vec3(1.0,0.35,1.9)),
-      position:new CANNON.Vec3(p.x, 0.95, p.z)
+      position:new CANNON.Vec3(p.x, 0.68, p.z) // plus bas pour garantir le contact
     });
     chassis.quaternion.setFromEuler(0,yaw,0,"XYZ");
     chassis.angularFactor.set(0,1,0);
@@ -159,10 +159,10 @@
     const wopt={
       radius:0.42,
       directionLocal:new CANNON.Vec3(0,-1,0),
-      suspensionRestLength:0.28, suspensionStiffness:42,
+      suspensionRestLength:0.38, suspensionStiffness:42,
       dampingRelaxation:2.4, dampingCompression:4.6,
       frictionSlip:3.1, axleLocal:new CANNON.Vec3(1,0,0),
-      maxSuspensionForce:1e4, maxSuspensionTravel:0.32,
+      maxSuspensionForce:1e4, maxSuspensionTravel:0.42,
       customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
     };
 
@@ -221,22 +221,41 @@
   function createVehicleDebug(scene, vehicle) {
     const group = new THREE.Group(); group.visible = false; scene.add(group);
     const items = [];
-    const sphereGeo = new THREE.SphereGeometry(0.18, 12, 12);
+    const baseGeo = new THREE.SphereGeometry(0.14, 10, 10);
+    const hitGeo  = new THREE.SphereGeometry(0.08, 8, 8);
+
     for (let i = 0; i < vehicle.wheelInfos.length; i++) {
       const col = (i < 2) ? 0x00d0ff : 0xff4d4d;
-      const sphere = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color: col, wireframe: true }));
-      group.add(sphere);
-      items.push({ sphere });
+      const base = new THREE.Mesh(baseGeo, new THREE.MeshBasicMaterial({ color: col, wireframe:true }));
+      const hit  = new THREE.Mesh(hitGeo,  new THREE.MeshBasicMaterial({ color: 0x00ff66 }));
+      hit.visible = false;
+      const node = new THREE.Group(); node.add(base, hit);
+      group.add(node);
+      items.push({ node, base, hit });
     }
+
     function update() {
       for (let i = 0; i < vehicle.wheelInfos.length; i++) {
         vehicle.updateWheelTransform(i);
         const wi = vehicle.wheelInfos[i];
         const wp = wi.worldTransform.position;
-        items[i].sphere.position.set(wp.x, wp.y - wi.radius - wi.suspensionLength, wp.z);
+        const rr = wi.raycastResult;
+
+        items[i].node.position.set(wp.x, wp.y - wi.radius - wi.suspensionLength, wp.z);
+
+        if (rr && rr.hasHit) {
+          items[i].hit.visible = true;
+          items[i].hit.position.set(
+            rr.hitPointWorld.x - wp.x,
+            rr.hitPointWorld.y - wp.y + wi.radius + wi.suspensionLength,
+            rr.hitPointWorld.z - wp.z
+          );
+        } else {
+          items[i].hit.visible = false;
+        }
       }
     }
-    return { group, update, setVisible(v){group.visible=v;} };
+    return { group, update, setVisible(v){ group.visible = v; } };
   }
 
   // -------- Player --------
@@ -247,15 +266,24 @@
   // -------- Input --------
   const input={steer:0, throttle:0, brake:0, hand:false, nitro:false, paused:false};
   const keys={};
-  const setKey=(e,d)=>{ const k=e.code||e.key; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); keys[k]=d; };
+  const setKey=(e,d)=>{
+    const k=e.code||e.key;
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    keys[k]=d;
+  };
 
-  addEventListener('keydown',e=>{
-    setKey(e,true);
-    if(e.code==='KeyP'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
-    if(e.code==='KeyR'){ resetOnTrack(player.chassis); }
-    if(e.code==='KeyB'){ playerDebug.setVisible(!playerDebug.group.visible); }
-  },{passive:false});
-  addEventListener('keyup',e=>setKey(e,false),{passive:false});
+  // ceinture+bretelles pour le focus clavier
+  ['keydown','keyup'].forEach(ev=>{
+    window.addEventListener(ev, e=>{
+      setKey(e, ev==='keydown');
+      if(ev==='keydown'){
+        if(e.code==='KeyP'){ input.paused=!input.paused; document.getElementById('pause').style.display=input.paused?'block':'none'; }
+        if(e.code==='KeyR'){ resetOnTrack(player.chassis); }
+        if(e.code==='KeyB'){ playerDebug.setVisible(!playerDebug.group.visible); }
+      }
+    }, {passive:false});
+    document.addEventListener(ev, e=>setKey(e, ev==='keydown'), {passive:false});
+  });
   renderer.domElement.addEventListener('click',()=>renderer.domElement.focus());
   renderer.domElement.focus();
 
@@ -290,7 +318,7 @@
     }
     const c=track.curve.getPointAt(bestT), tan=track.curve.getTangentAt(bestT);
     const yaw=Math.atan2(tan.x,tan.z);
-    body.position.set(c.x, .95, c.z);
+    body.position.set(c.x, .68, c.z);
     body.velocity.set(0,0,0); body.angularVelocity.set(0,0,0);
     body.quaternion.setFromEuler(0,yaw,0,'XYZ');
   }
