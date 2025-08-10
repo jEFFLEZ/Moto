@@ -374,7 +374,6 @@
 
     // freinage
     for (let i=0;i<4;i++) vehicle.setBrake(0, i);    // important AVANT le moteur
-const engine = input.throttle * 2000;            // ou 2800 avec nitro
 vehicle.applyEngineForce(-engine, 2);
 vehicle.applyEngineForce(-engine, 3);
     const brake=(input.brake?BRAKE:0)+(input.hand?H_BRAKE:0);
