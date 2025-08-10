@@ -378,7 +378,6 @@ let FORCE_SIGN = -1; // on peut l'inverser en live
 let autoThrottleUntil = 0;
 
 const txt = dbg.querySelector('#dbgText');
-const fmt = n => (Math.round(n*100)/100).toFixed(2);
 
 dbg.querySelector('#btnFlip').onclick = ()=>{
   FORCE_SIGN *= -1;
