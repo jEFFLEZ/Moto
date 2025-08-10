@@ -142,7 +142,7 @@
   }
 
   /* ---------- vehicle (unique et correct) ---------- */
-  function makeVehicle(startT) {
+  function makeVehicle(startT){
   // Point + orientation
   const p   = track.curve.getPointAt(startT);
   const tan = track.curve.getTangentAt(startT);
@@ -196,7 +196,7 @@
   chassis.angularDamping = 0.3;
 
   return { chassis, vehicle: veh };    // <<< retourne bien 'veh'
-
+  }
   function makeMotoMesh(color=0x4caf50){
     const root=new THREE.Group();
     const main=new THREE.MeshStandardMaterial({color,metalness:.05,roughness:.6});
