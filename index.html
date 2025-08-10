@@ -217,6 +217,21 @@ for (let i = 0; i < SEG_BODIES; i++) {
     rail.quaternion.setFromEuler(0, yaw, 0);
     world.addBody(rail);
   }
+}
+
+
+// Châssis “moto”
+const startP=track.curve.getPointAt(0);
+const chassisShape=new CANNON.Box(new CANNON.Vec3(.6,.3,1.0));
+const chassis=new CANNON.Body({mass:180,shape:chassisShape,position:new CANNON.Vec3(startP.x,.6,startP.z)});
+world.addBody(chassis);
+
+// Véhicule 2 roues
+const vehicle=new CANNON.RaycastVehicle({chassisBody:chassis});
+const wopt={radius:.35, directionLocal:new CANNON.Vec3(0,-1,0),
+  suspensionRestLength:.26, suspensionStiffness:38, dampingRelaxation:2.3, dampingCompression:4.4,
+  frictionSlip:2.2, axleLocal:new CANNON.Vec3(1,0,0), maxSuspensionForce:1e4, maxSuspensionTravel:.35,
+  customSlidingRotationalSpeed:-30, useCustomSlidingRotationalSpeed:true
 };
 vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0, .9), radius:.33}); // avant
 vehicle.addWheel({...wopt, chassisConnectionPointLocal:new CANNON.Vec3(0,0,-.9), radius:.36}); // arrière
